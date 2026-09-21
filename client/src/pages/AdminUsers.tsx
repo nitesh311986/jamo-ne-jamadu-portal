@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
-import { Users, Plus, X, LogOut } from 'lucide-react';
+import { ArrowLeft, Plus, X } from 'lucide-react';
 import api from '../api/axios';
-import { useAuth } from '../hooks/useAuth';
+import { Link } from 'react-router-dom';
 import type { User, UserListResponse, CreateUserRequest, ApiError } from '../types/auth';
 import type { AxiosError } from 'axios';
 
@@ -29,8 +29,6 @@ const initialForm: CreateUserForm = {
 };
 
 export default function AdminUsers(): ReactElement {
-  const { user, logout } = useAuth();
-
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [listError, setListError] = useState<string>('');
@@ -89,39 +87,29 @@ export default function AdminUsers(): ReactElement {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white shadow-sm">
-        <div className="mx-auto flex max-w-5xl items-center justify-between p-4">
-          <div className="flex items-center gap-2">
-            <Users className="text-orange-600" size={24} />
-            <h1 className="text-lg font-semibold text-slate-800 sm:text-xl">User Management</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-slate-500 sm:inline">
-              {user?.fullName ?? user?.email}
-            </span>
-            <button
-              onClick={logout}
-              className="flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
-            >
-              <LogOut size={16} />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl p-4 sm:p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-medium text-slate-700 sm:text-lg">Users</h2>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
           >
-            <Plus size={18} />
-            New User
-          </button>
+            <ArrowLeft size={16} />
+            <span className="hidden sm:inline">Back</span>
+          </Link>
+          <h1 className="text-lg font-bold text-slate-800 sm:text-xl">User Management</h1>
         </div>
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
+        >
+          <Plus size={18} />
+          New User
+        </button>
+      </div>
+
+      <main className="space-y-4">
+
 
         {listError && (
           <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{listError}</div>
@@ -175,7 +163,7 @@ export default function AdminUsers(): ReactElement {
                   value={form.fullName}
                   onChange={(e) => handleChange('fullName', e.target.value)}
                   required
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
               </div>
 
@@ -186,7 +174,7 @@ export default function AdminUsers(): ReactElement {
                   value={form.email}
                   onChange={(e) => handleChange('email', e.target.value)}
                   required
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
               </div>
 
@@ -196,7 +184,7 @@ export default function AdminUsers(): ReactElement {
                   type="tel"
                   value={form.phoneNumber}
                   onChange={(e) => handleChange('phoneNumber', e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
               </div>
 
@@ -208,7 +196,7 @@ export default function AdminUsers(): ReactElement {
                   onChange={(e) => handleChange('password', e.target.value)}
                   required
                   minLength={8}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
               </div>
 
@@ -217,7 +205,7 @@ export default function AdminUsers(): ReactElement {
                 <select
                   value={form.role}
                   onChange={(e) => handleChange('role', e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
                 >
                   {ROLES.map((role) => (
                     <option key={role} value={role}>

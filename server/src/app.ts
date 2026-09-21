@@ -1,11 +1,12 @@
 import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.routes';
+import sevakRoutes from './routes/sevak.routes';
 import morganMiddleware from './utils/morgan';
 import logger from './utils/logger';
-
-dotenv.config();
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.get('/health', (_req: Request, res: Response): void => {
 });
 
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/sevaks', sevakRoutes);
 
 app.use((_req: Request, res: Response): void => {
   res.status(404).json({ error: 'Not found' });
