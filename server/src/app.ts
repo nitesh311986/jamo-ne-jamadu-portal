@@ -5,6 +5,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.routes';
 import sevakRoutes from './routes/sevak.routes';
+import bookRoutes from './routes/book.routes';
+import receiptRoutes from './routes/receipt.routes';
 import morganMiddleware from './utils/morgan';
 import logger from './utils/logger';
 
@@ -20,6 +22,8 @@ app.get('/health', (_req: Request, res: Response): void => {
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/sevaks', sevakRoutes);
+app.use('/api/v1/books', bookRoutes);
+app.use('/api/v1/receipts', receiptRoutes);
 
 app.use((_req: Request, res: Response): void => {
   res.status(404).json({ error: 'Not found' });

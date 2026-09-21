@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, UserPlus, Search, Shield, Handshake, TrendingUp } from 'lucide-react';
+import { Users, UserPlus, Search, Shield, Handshake, TrendingUp, Receipt, BookOpen } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
 interface StatItem {
@@ -46,6 +46,8 @@ const revenueData = [
 const quickActions = [
   { label: 'Register Sevak', to: '/sevaks/register', icon: UserPlus },
   { label: 'Find Sevak', to: '/sevaks', icon: Search },
+  { label: 'Book Allocation', to: '/receipts/entry', icon: BookOpen },
+  { label: 'Receipt Search', to: '/receipts/search', icon: Receipt },
   { label: 'Manage Users', to: '/admin/users', icon: Shield },
 ];
 
