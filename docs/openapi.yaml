@@ -1,0 +1,272 @@
+openapi: 3.0.3
+info:
+  title: BAPS Anand Jamo Ne Jamadu Seva Portal API
+  description: Module 1 (Auth & RBAC) OpenAPI specification
+  version: 1.0.0
+  contact:
+    name: BAPS Anand Mandir
+
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate a user and receive a JWT
+      operationId: login
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Missing email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/me:
+    get:
+      summary: Get the current authenticated user
+      operationId: getMe
+      tags:
+        - Auth
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Authentication required or token invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/users:
+    get:
+      summary: List all users (SUPER_ADMIN only)
+      operationId: listUsers
+      tags:
+        - Auth
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new user (SUPER_ADMIN only)
+      operationId: createUser
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error or invalid role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+
+    LoginResponse:
+      type: object
+      required:
+        - token
+        - user
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - password
+        - fullName
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        fullName:
+          type: string
+        phoneNumber:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum:
+            - SUPER_ADMIN
+            - VOLUNTEER
+
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - fullName
+        - role
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        fullName:
+          type: string
+        phoneNumber:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum:
+            - SUPER_ADMIN
+            - VOLUNTEER
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserResponse:
+      type: object
+      required:
+        - user
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+
+    MeResponse:
+      type: object
+      required:
+        - user
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+
+    UserListResponse:
+      type: object
+      required:
+        - users
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

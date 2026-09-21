@@ -1,0 +1,113 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RoleName {
+  SUPER_ADMIN
+  VOLUNTEER
+}
+
+enum BookStatus {
+  ASSIGNED
+  SUBMITTED
+  PARTIALLY_SUBMITTED
+}
+
+model User {
+  id           String      @id @default(uuid())
+  email        String      @unique
+  passwordHash String
+  fullName     String
+  phoneNumber  String?
+  role         RoleName    @default(VOLUNTEER)
+  auditLogs    AuditLog[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([role])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  details   Json
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+}
+
+model Sevak {
+  id                String               @id @default(uuid())
+  sevakCode         String               @unique // Format: e.g. PJ4892
+  fullName          String               // પૂરું નામ
+  firstName         String
+  lastName          String
+  mobile            String               // મોબાઇલ
+  altMobile         String?              // અન્ય મોબાઇલ નંબર
+  whatsapp          String?              // WhatsApp નંબર
+  address           String               // પૂરું સરનામું
+  mandal            String               // મંડળ
+  kshetra           String               // ક્ષેત્ર
+  expectedContacts  Int                  // આપ કુલ કેટલા વ્યક્તિઓનો સંપર્ક કરશો?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  assignedBooks     BookAllocation[]
+  receipts          SevaReceipt[]
+  distributions     PrasadDistribution[]
+
+  @@index([mobile])
+  @@index([fullName])
+  @@index([sevakCode])
+}
+
+model BookAllocation {
+  id         String     @id @default(uuid())
+  bookNumber String     @unique // બુક નં.
+  sevakId    String
+  sevak      Sevak      @relation(fields: [sevakId], references: [id], onDelete: Cascade)
+  status     BookStatus @default(ASSIGNED)
+  assignedAt DateTime   @default(now())
+
+  @@index([bookNumber])
+  @@index([sevakId])
+}
+
+model SevaReceipt {
+  id          String   @id @default(uuid())
+  sevakId     String
+  sevak       Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
+  bookNumber  String   // બુક નં.
+  receiptNo   String   // પહોંચ નં.
+  donorName   String   // પ.ભ.શ્રી (Donor Name)
+  donorMobile String?  // મોબાઇલ નં.
+  amount      Decimal  @db.Decimal(12, 2)
+  entryDate   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([bookNumber, receiptNo])
+  @@index([receiptNo])
+  @@index([bookNumber])
+  @@index([donorName])
+  @@index([sevakId])
+}
+
+model PrasadDistribution {
+  id               String   @id @default(uuid())
+  sevakId          String
+  sevak            Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
+  slabTier         String   // e.g., '<500', '500-999', '1000-1999', etc.
+  eligibleBoxes    Int      @default(0)
+  distributedBoxes Int      @default(0)
+  updatedAt        DateTime @updatedAt
+
+  @@unique([sevakId, slabTier])
+  @@index([sevakId])
+}
