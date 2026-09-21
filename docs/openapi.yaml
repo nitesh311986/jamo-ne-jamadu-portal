@@ -148,6 +148,94 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /sevaks:
+    post:
+      summary: Register a new sevak
+      operationId: createSevak
+      tags:
+        - Sevaks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSevakRequest'
+      responses:
+        '201':
+          description: Sevak registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SevakResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sevaks/search:
+    get:
+      summary: Search sevaks by code, mobile, or name
+      operationId: searchSevaks
+      tags:
+        - Sevaks
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SevakSearchResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sevaks/export/excel:
+    get:
+      summary: Download all sevaks as an Excel file
+      operationId: exportSevaksExcel
+      tags:
+        - Sevaks
+      responses:
+        '200':
+          description: Excel file download
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -262,6 +350,119 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/User'
+
+    CreateSevakRequest:
+      type: object
+      required:
+        - fullName
+        - firstName
+        - lastName
+        - mobile
+        - address
+        - mandal
+        - kshetra
+        - expectedContacts
+      properties:
+        fullName:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        mobile:
+          type: string
+        altMobile:
+          type: string
+          nullable: true
+        whatsapp:
+          type: string
+          nullable: true
+        address:
+          type: string
+        mandal:
+          type: string
+        kshetra:
+          type: string
+        expectedContacts:
+          type: integer
+          minimum: 0
+
+    Sevak:
+      type: object
+      required:
+        - id
+        - sevakCode
+        - fullName
+        - firstName
+        - lastName
+        - mobile
+        - address
+        - mandal
+        - kshetra
+        - expectedContacts
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        sevakCode:
+          type: string
+        fullName:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        mobile:
+          type: string
+        altMobile:
+          type: string
+          nullable: true
+        whatsapp:
+          type: string
+          nullable: true
+        address:
+          type: string
+        mandal:
+          type: string
+        kshetra:
+          type: string
+        expectedContacts:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SevakResponse:
+      type: object
+      required:
+        - sevak
+      properties:
+        sevak:
+          $ref: '#/components/schemas/Sevak'
+
+    SevakSearchResponse:
+      type: object
+      required:
+        - sevaks
+        - total
+        - page
+        - limit
+      properties:
+        sevaks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Sevak'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
 
     Error:
       type: object

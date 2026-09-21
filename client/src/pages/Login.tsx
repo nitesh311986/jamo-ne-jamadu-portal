@@ -19,7 +19,7 @@ export default function Login(): ReactElement {
 
     try {
       await login(email, password);
-      navigate('/admin/users');
+      navigate('/dashboard');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
       setError(message);
@@ -52,7 +52,7 @@ export default function Login(): ReactElement {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
               placeholder="admin@anandbaps.org"
             />
           </div>
@@ -67,7 +67,7 @@ export default function Login(): ReactElement {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
               placeholder="••••••••"
             />
           </div>
