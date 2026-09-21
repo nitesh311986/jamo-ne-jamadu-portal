@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: BAPS Anand Jamo Ne Jamadu Seva Portal API
-  description: Module 1 (Auth & RBAC) OpenAPI specification
-  version: 1.0.0
+  description: Module 3 (Books & Receipts) OpenAPI specification
+  version: 3.0.0
   contact:
     name: BAPS Anand Mandir
 
@@ -221,6 +221,222 @@ paths:
       operationId: exportSevaksExcel
       tags:
         - Sevaks
+      responses:
+        '200':
+          description: Excel file download
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /books/assign:
+    post:
+      summary: Assign a book number to a sevak
+      operationId: assignBook
+      tags:
+        - Books
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignBookRequest'
+      responses:
+        '201':
+          description: Book assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Sevak not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Book number already assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /books/sevak/{sevakId}:
+    get:
+      summary: List books assigned to a sevak
+      operationId: getBooksBySevak
+      tags:
+        - Books
+      parameters:
+        - in: path
+          name: sevakId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of book allocations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookListResponse'
+        '404':
+          description: Sevak not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /receipts:
+    post:
+      summary: Create one or many receipts
+      operationId: createReceipts
+      tags:
+        - Receipts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReceiptsRequest'
+      responses:
+        '201':
+          description: Receipts created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptCreateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Duplicate receipt or conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /receipts/search:
+    get:
+      summary: Search receipts by book, number, donor, or mobile
+      operationId: searchReceipts
+      tags:
+        - Receipts
+      parameters:
+        - in: query
+          name: bookNumber
+          schema:
+            type: string
+        - in: query
+          name: receiptNo
+          schema:
+            type: string
+        - in: query
+          name: donorName
+          schema:
+            type: string
+        - in: query
+          name: donorMobile
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated receipts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptSearchResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /receipts/sevak/{sevakId}/summary:
+    get:
+      summary: Real-time receipt aggregation for a sevak
+      operationId: getSevakReceiptSummary
+      tags:
+        - Receipts
+      parameters:
+        - in: path
+          name: sevakId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Summary with denomination breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptSummaryResponse'
+        '404':
+          description: Sevak not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /receipts/export/excel:
+    get:
+      summary: Export all receipts with a summary sheet
+      operationId: exportReceiptsExcel
+      tags:
+        - Receipts
       responses:
         '200':
           description: Excel file download
@@ -462,6 +678,217 @@ components:
         page:
           type: integer
         limit:
+          type: integer
+
+    AssignBookRequest:
+      type: object
+      required:
+        - bookNumber
+        - sevakId
+      properties:
+        bookNumber:
+          type: string
+        sevakId:
+          type: string
+          format: uuid
+
+    BookAllocation:
+      type: object
+      required:
+        - id
+        - bookNumber
+        - sevakId
+        - status
+        - assignedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookNumber:
+          type: string
+        sevakId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - ASSIGNED
+            - SUBMITTED
+            - PARTIALLY_SUBMITTED
+        assignedAt:
+          type: string
+          format: date-time
+
+    BookResponse:
+      type: object
+      required:
+        - book
+      properties:
+        book:
+          $ref: '#/components/schemas/BookAllocation'
+
+    BookListResponse:
+      type: object
+      required:
+        - books
+      properties:
+        books:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookAllocation'
+
+    CreateReceiptsRequest:
+      type: object
+      required:
+        - sevakId
+        - receipts
+      properties:
+        sevakId:
+          type: string
+          format: uuid
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptItem'
+
+    ReceiptItem:
+      type: object
+      required:
+        - bookNumber
+        - receiptNo
+        - donorName
+        - amount
+      properties:
+        sevakId:
+          type: string
+          format: uuid
+        bookNumber:
+          type: string
+        receiptNo:
+          type: string
+        donorName:
+          type: string
+        donorMobile:
+          type: string
+          nullable: true
+        amount:
+          type: number
+          minimum: 0
+        entryDate:
+          type: string
+          format: date-time
+          nullable: true
+
+    ReceiptCreateResponse:
+      type: object
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+
+    Receipt:
+      type: object
+      required:
+        - id
+        - sevakId
+        - bookNumber
+        - receiptNo
+        - donorName
+        - amount
+        - entryDate
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        sevakId:
+          type: string
+          format: uuid
+        bookNumber:
+          type: string
+        receiptNo:
+          type: string
+        donorName:
+          type: string
+        donorMobile:
+          type: string
+          nullable: true
+        amount:
+          type: number
+        entryDate:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        sevak:
+          $ref: '#/components/schemas/SevakStub'
+
+    SevakStub:
+      type: object
+      required:
+        - sevakCode
+        - fullName
+        - mandal
+      properties:
+        sevakCode:
+          type: string
+        fullName:
+          type: string
+        mandal:
+          type: string
+
+    ReceiptSearchResponse:
+      type: object
+      required:
+        - receipts
+        - total
+        - page
+        - limit
+      properties:
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Receipt'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    ReceiptSummaryGroup:
+      type: object
+      required:
+        - amount
+        - count
+        - subTotal
+      properties:
+        amount:
+          type: number
+        count:
+          type: integer
+        subTotal:
+          type: number
+
+    ReceiptSummaryResponse:
+      type: object
+      required:
+        - sevak
+        - groups
+        - grandTotal
+        - totalCount
+      properties:
+        sevak:
+          $ref: '#/components/schemas/SevakStub'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptSummaryGroup'
+        grandTotal:
+          type: number
+        totalCount:
           type: integer
 
     Error:

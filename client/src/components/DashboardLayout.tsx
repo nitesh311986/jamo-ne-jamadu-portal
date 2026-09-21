@@ -11,6 +11,8 @@ import {
   X,
   Bell,
   Search as SearchIcon,
+  BookOpen,
+  Receipt,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -25,6 +27,8 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
   { label: 'Sevak Registration', to: '/sevaks/register', icon: UserPlus, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Sevak Directory', to: '/sevaks', icon: Search, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
+  { label: 'Book Allocation', to: '/receipts/entry', icon: BookOpen, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
+  { label: 'Receipt Search', to: '/receipts/search', icon: Receipt, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Admin Users', to: '/admin/users', icon: Shield, allowedRoles: ['SUPER_ADMIN'] },
 ];
 

@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard';
 import AdminUsers from './pages/AdminUsers';
 import SevakRegistration from './pages/SevakRegistration';
 import SevakList from './pages/SevakList';
+import ReceiptEntry from './pages/ReceiptEntry';
+import ReceiptSearch from './pages/ReceiptSearch';
 import ProtectedRoute from './components/ProtectedRoute';
 import DashboardLayout from './components/DashboardLayout';
 
@@ -18,6 +20,8 @@ function App(): ReactElement {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/sevaks" element={<SevakList />} />
             <Route path="/sevaks/register" element={<SevakRegistration />} />
+            <Route path="/receipts/entry" element={<ReceiptEntry />} />
+            <Route path="/receipts/search" element={<ReceiptSearch />} />
             <Route element={<ProtectedRoute allowedRoles={['SUPER_ADMIN']} />}>
               <Route path="/admin/users" element={<AdminUsers />} />
             </Route>
