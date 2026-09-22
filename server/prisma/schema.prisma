@@ -86,7 +86,7 @@ model SevaReceipt {
   sevak       Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
   bookNumber  String   // બુક નં.
   receiptNo   String   // પહોંચ નં.
-  donorName   String   // પ.ભ.શ્રી (Donor Name)
+  donorName   String?  // પ.ભ.શ્રી (Donor Name)
   donorMobile String?  // મોબાઇલ નં.
   amount      Decimal  @db.Decimal(12, 2)
   entryDate   DateTime @default(now())

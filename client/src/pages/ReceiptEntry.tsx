@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -7,13 +8,26 @@ import {
   type ReactElement,
 } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, IndianRupee, Plus, Save, Search } from 'lucide-react';
+import {
+  ArrowLeft,
+  BookOpen,
+  IndianRupee,
+  Plus,
+  Save,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import api from '../api/axios';
 import { formatINR } from '../utils/currency';
-import type { Sevak } from '../types/sevak';
-import type { SevakSearchResponse } from '../types/sevak';
+import type { Sevak, SevakSearchResponse } from '../types/sevak';
 import type { BookAllocation } from '../types/book';
-import type { ReceiptInput, ReceiptSummaryResponse } from '../types/receipt';
+import type {
+  Receipt,
+  ReceiptInput,
+  ReceiptUpdateItem,
+  NewReceiptItem,
+  BulkSyncResponse,
+} from '../types/receipt';
 import type { ApiError } from '../types/auth';
 import type { AxiosError } from 'axios';
 
@@ -33,19 +47,34 @@ const fieldOrder: (keyof ReceiptInput)[] = [
   'amount',
 ];
 
+function normalizeMobile(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function inputFromReceipt(receipt: Receipt): ReceiptInput {
+  return {
+    bookNumber: receipt.bookNumber,
+    receiptNo: receipt.receiptNo,
+    donorName: receipt.donorName,
+    donorMobile: receipt.donorMobile ?? '',
+    amount: String(receipt.amount),
+  };
+}
+
 export default function ReceiptEntry(): ReactElement {
   const [sevakQuery, setSevakQuery] = useState<string>('');
   const [sevakResults, setSevakResults] = useState<Sevak[]>([]);
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
   const [selectedSevak, setSelectedSevak] = useState<Sevak | null>(null);
   const [books, setBooks] = useState<BookAllocation[]>([]);
-  const [summary, setSummary] = useState<ReceiptSummaryResponse | null>(null);
-  const [rows, setRows] = useState<ReceiptInput[]>([{ ...initialRow }]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [edits, setEdits] = useState<Record<string, ReceiptInput>>({});
+  const [drafts, setDrafts] = useState<ReceiptInput[]>([{ ...initialRow }]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
 
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const lastRowRef = useRef<HTMLTableRowElement | null>(null);
 
   useEffect(() => {
@@ -70,50 +99,181 @@ export default function ReceiptEntry(): ReactElement {
   }, [sevakQuery]);
 
   useEffect(() => {
-    const firstInput = lastRowRef.current?.querySelector('input') as HTMLInputElement | null;
+    const firstInput = lastRowRef.current?.querySelector('input, select') as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | null;
     firstInput?.focus();
-  }, [rows.length]);
+  }, [drafts.length]);
 
   const selectSevak = async (sevak: Sevak): Promise<void> => {
     setSelectedSevak(sevak);
     setSevakQuery('');
     setSevakResults([]);
     setShowDropdown(false);
-    setRows([{ ...initialRow }]);
+    setReceipts([]);
+    setEdits({});
+    setDrafts([{ ...initialRow }]);
     setError('');
     setSuccess('');
 
     try {
-      const [booksRes, summaryRes] = await Promise.all([
+      const [receiptsRes, booksRes] = await Promise.all([
+        api.get<{ receipts: Receipt[] }>(`/api/v1/receipts/sevak/${sevak.id}`),
         api.get<{ books: BookAllocation[] }>(`/api/v1/books/sevak/${sevak.id}`),
-        api.get<ReceiptSummaryResponse>(`/api/v1/receipts/sevak/${sevak.id}/summary`),
       ]);
+      setReceipts(receiptsRes.data.receipts);
       setBooks(booksRes.data.books);
-      setSummary(summaryRes.data);
     } catch {
       setError('Failed to load sevak details');
     }
   };
 
-  const addRow = (): void => {
-    setRows((prev) => [...prev, { ...initialRow }]);
+  const getExistingDisplay = (receipt: Receipt): ReceiptInput => {
+    return edits[receipt.id] ?? inputFromReceipt(receipt);
   };
 
-  const updateRow = (
+  const getExistingChanges = (receipt: Receipt): Partial<ReceiptUpdateItem> => {
+    const display = getExistingDisplay(receipt);
+    const changes: Partial<ReceiptUpdateItem> = { receiptId: receipt.id };
+
+    if (display.receiptNo.trim() !== receipt.receiptNo) {
+      changes.receiptNo = display.receiptNo.trim();
+    }
+    if (display.donorName.trim() !== receipt.donorName) {
+      changes.donorName = display.donorName.trim();
+    }
+    const cleanMobile = display.donorMobile.trim()
+      ? normalizeMobile(display.donorMobile)
+      : null;
+    if (cleanMobile !== (receipt.donorMobile ?? null)) {
+      changes.donorMobile = cleanMobile;
+    }
+    const amount = Number(display.amount);
+    if (!Number.isNaN(amount) && amount !== receipt.amount) {
+      changes.amount = amount;
+    }
+
+    return changes;
+  };
+
+  const isExistingModified = (receipt: Receipt): boolean => {
+    const c = getExistingChanges(receipt);
+    return Object.keys(c).length > 1;
+  };
+
+  const isFieldModified = (receipt: Receipt, field: keyof ReceiptInput): boolean => {
+    const display = getExistingDisplay(receipt);
+    const original = inputFromReceipt(receipt);
+    return display[field] !== original[field];
+  };
+
+  const allKeyedRows = useMemo(() => {
+    const existing = receipts.map((r) => ({
+      id: r.id,
+      bookNumber: getExistingDisplay(r).bookNumber.trim(),
+      receiptNo: getExistingDisplay(r).receiptNo.trim(),
+    }));
+    const draft = drafts.map((d, i) => ({
+      id: `draft-${i}`,
+      bookNumber: d.bookNumber.trim(),
+      receiptNo: d.receiptNo.trim(),
+    }));
+    return [...existing, ...draft];
+  }, [receipts, edits, drafts]);
+
+  const duplicateIds = useMemo(() => {
+    const seen = new Map<string, string[]>();
+    const dupes = new Set<string>();
+    for (const row of allKeyedRows) {
+      if (!row.bookNumber || !row.receiptNo) continue;
+      const key = `${row.bookNumber}|${row.receiptNo}`;
+      const list = seen.get(key) ?? [];
+      list.push(row.id);
+      seen.set(key, list);
+    }
+    for (const list of seen.values()) {
+      if (list.length > 1) {
+        list.forEach((id) => dupes.add(id));
+      }
+    }
+    return dupes;
+  }, [allKeyedRows]);
+
+  const liveRows = useMemo(() => {
+    const existing = receipts.map((r) => getExistingDisplay(r));
+    return [...existing, ...drafts];
+  }, [receipts, edits, drafts]);
+
+  const liveSummary = useMemo(() => {
+    const groups: Record<string, { amount: number; count: number; subTotal: number }> = {};
+    let grandTotal = 0;
+    let totalCount = 0;
+    const validBooks = new Set<string>();
+
+    for (const row of liveRows) {
+      const amount = Number(row.amount);
+      if (!amount || Number.isNaN(amount) || amount <= 0) continue;
+      const key = amount.toFixed(2);
+      if (!groups[key]) {
+        groups[key] = { amount, count: 0, subTotal: 0 };
+      }
+      groups[key].count += 1;
+      groups[key].subTotal += amount;
+      grandTotal += amount;
+      totalCount += 1;
+      if (row.bookNumber.trim()) {
+        validBooks.add(row.bookNumber.trim());
+      }
+    }
+
+    return {
+      groups: Object.values(groups).sort((a, b) => a.amount - b.amount),
+      grandTotal,
+      totalCount,
+      uniqueBooks: validBooks.size,
+    };
+  }, [liveRows]);
+
+  const updateExisting = (
+    receipt: Receipt,
+    field: keyof ReceiptInput,
+    value: string
+  ): void => {
+    setEdits((prev) => {
+      const current = prev[receipt.id] ?? inputFromReceipt(receipt);
+      return { ...prev, [receipt.id]: { ...current, [field]: value } };
+    });
+  };
+
+  const updateDraft = (
     index: number,
     field: keyof ReceiptInput,
     value: string
   ): void => {
-    setRows((prev) => {
+    setDrafts((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
       return next;
     });
   };
 
+  const addDraft = (): void => {
+    setDrafts((prev) => [...prev, { ...initialRow }]);
+  };
+
+  const removeDraft = (index: number): void => {
+    setDrafts((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = [...prev];
+      next.splice(index, 1);
+      return next;
+    });
+  };
+
   const handleKeyDown = (
-    e: KeyboardEvent<HTMLInputElement>,
-    index: number,
+    e: KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
+    rowId: string,
     field: keyof ReceiptInput
   ): void => {
     if (e.key !== 'Enter') return;
@@ -122,49 +282,152 @@ export default function ReceiptEntry(): ReactElement {
     const fieldIndex = fieldOrder.indexOf(field);
     if (fieldIndex < fieldOrder.length - 1) {
       const nextField = fieldOrder[fieldIndex + 1];
-      const key = `${index}-${nextField}`;
-      inputRefs.current[key]?.focus();
+      inputRefs.current[`${rowId}-${nextField}`]?.focus();
     } else {
-      addRow();
+      addDraft();
     }
   };
 
-  const handleSave = async (): Promise<void> => {
+  const validateDisplay = (row: ReceiptInput, label: string): string => {
+    if (!row.bookNumber.trim()) return `${label}: Book No is required`;
+    if (!row.receiptNo.trim()) return `${label}: Receipt No is required`;
+    const amount = Number(row.amount);
+    if (Number.isNaN(amount) || amount <= 0) return `${label}: Invalid amount`;
+    return '';
+  };
+
+  const saveExisting = async (receipt: Receipt): Promise<void> => {
+    const display = getExistingDisplay(receipt);
+    const validation = validateDisplay(display, `Existing row ${receipt.receiptNo}`);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+
+    const changes = getExistingChanges(receipt);
+    if (Object.keys(changes).length <= 1) {
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[receipt.id];
+        return next;
+      });
+      return;
+    }
+
+    const payload: ReceiptUpdateItem = {
+      receiptId: receipt.id,
+      ...(changes.receiptNo !== undefined && { receiptNo: changes.receiptNo }),
+      ...(changes.donorName !== undefined && { donorName: changes.donorName }),
+      ...(changes.donorMobile !== undefined && { donorMobile: changes.donorMobile }),
+      ...(changes.amount !== undefined && { amount: changes.amount }),
+    };
+
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await api.put(`/api/v1/receipts/${receipt.id}`, payload);
+      setSuccess('Receipt updated');
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[receipt.id];
+        return next;
+      });
+      if (selectedSevak) {
+        const { data } = await api.get<{ receipts: Receipt[] }>(
+          `/api/v1/receipts/sevak/${selectedSevak.id}`
+        );
+        setReceipts(data.receipts);
+      }
+    } catch (err) {
+      setError(
+        (err as AxiosError<ApiError>).response?.data?.error ?? 'Failed to update receipt'
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteExisting = async (receipt: Receipt): Promise<void> => {
+    if (!window.confirm('Delete this receipt?')) return;
+
+    try {
+      await api.delete(`/api/v1/receipts/${receipt.id}`);
+      setSuccess('Receipt deleted');
+      if (selectedSevak) {
+        const { data } = await api.get<{ receipts: Receipt[] }>(
+          `/api/v1/receipts/sevak/${selectedSevak.id}`
+        );
+        setReceipts(data.receipts);
+      }
+    } catch (err) {
+      setError(
+        (err as AxiosError<ApiError>).response?.data?.error ?? 'Failed to delete receipt'
+      );
+    }
+  };
+
+  const handleSaveAll = async (): Promise<void> => {
     if (!selectedSevak) {
       setError('Select a sevak first');
       return;
     }
 
-    const receipts = [];
-    for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i];
-      if (!row.bookNumber.trim() && !row.receiptNo.trim() && !row.donorName.trim() && !row.amount) {
-        continue;
-      }
+    const updates: ReceiptUpdateItem[] = [];
+    for (const receipt of receipts) {
+      const changes = getExistingChanges(receipt);
+      if (Object.keys(changes).length <= 1) continue;
 
-      if (!row.bookNumber.trim() || !row.receiptNo.trim() || !row.donorName.trim() || !row.amount) {
-        setError(`Row ${i + 1} has missing fields`);
+      const display = getExistingDisplay(receipt);
+      const validation = validateDisplay(display, 'Modified row');
+      if (validation) {
+        setError(validation);
         return;
       }
 
-      const amount = Number(row.amount);
-      if (Number.isNaN(amount) || amount <= 0) {
-        setError(`Row ${i + 1} has an invalid amount`);
+      updates.push({
+        receiptId: receipt.id,
+        ...(changes.receiptNo !== undefined && { receiptNo: changes.receiptNo }),
+        ...(changes.donorName !== undefined && { donorName: changes.donorName }),
+        ...(changes.donorMobile !== undefined && { donorMobile: changes.donorMobile }),
+        ...(changes.amount !== undefined && { amount: changes.amount }),
+      });
+    }
+
+    const additions: NewReceiptItem[] = [];
+    for (let i = 0; i < drafts.length; i += 1) {
+      const draft = drafts[i];
+      const isEmpty =
+        !draft.bookNumber.trim() &&
+        !draft.receiptNo.trim() &&
+        !draft.donorName.trim() &&
+        !draft.amount.trim();
+      if (isEmpty) continue;
+
+      const validation = validateDisplay(draft, `New row ${i + 1}`);
+      if (validation) {
+        setError(validation);
         return;
       }
 
-      receipts.push({
-        bookNumber: row.bookNumber.trim(),
-        receiptNo: row.receiptNo.trim(),
-        donorName: row.donorName.trim(),
-        donorMobile: row.donorMobile.trim() || null,
+      const amount = Number(draft.amount);
+      const donorMobile = draft.donorMobile.trim()
+        ? normalizeMobile(draft.donorMobile)
+        : null;
+
+      additions.push({
+        bookNumber: draft.bookNumber.trim(),
+        receiptNo: draft.receiptNo.trim(),
+        donorName: draft.donorName.trim(),
+        donorMobile,
         amount,
         entryDate: new Date().toISOString(),
       });
     }
 
-    if (receipts.length === 0) {
-      setError('No valid receipts to save');
+    if (updates.length === 0 && additions.length === 0) {
+      setError('No changes to save');
       return;
     }
 
@@ -173,43 +436,100 @@ export default function ReceiptEntry(): ReactElement {
     setSuccess('');
 
     try {
-      await api.post('/api/v1/receipts', {
+      const { data } = await api.post<BulkSyncResponse>('/api/v1/receipts/bulk-sync', {
         sevakId: selectedSevak.id,
-        receipts,
+        updates,
+        additions,
       });
 
-      setSuccess(`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} saved`);
-      setRows([{ ...initialRow }]);
-
-      const { data } = await api.get<ReceiptSummaryResponse>(
-        `/api/v1/receipts/sevak/${selectedSevak.id}/summary`
+      setReceipts(data.receipts);
+      setBooks((prev) =>
+        prev.map((b) => {
+          const matched = data.receipts.find((r) => r.bookNumber === b.bookNumber);
+          return matched?.book
+            ? { ...b, status: matched.book.status }
+            : b;
+        })
       );
-      setSummary(data);
+      setEdits({});
+      setDrafts([{ ...initialRow }]);
+      setSuccess(
+        `Saved ${data.summary.totalCount} receipt${
+          data.summary.totalCount === 1 ? '' : 's'
+        } across ${data.summary.uniqueBooks ?? 0} book(s)`
+      );
     } catch (err) {
       setError(
-        (err as AxiosError<ApiError>).response?.data?.error ?? 'Failed to save receipts'
+        (err as AxiosError<ApiError>).response?.data?.error ?? 'Failed to save changes'
       );
     } finally {
       setIsSaving(false);
     }
   };
 
-  const liveGroups: Record<number, { amount: number; count: number; subTotal: number }> = {};
-  let liveTotal = 0;
-  for (const row of rows) {
-    const amount = Number(row.amount);
-    if (!amount || Number.isNaN(amount)) continue;
-    if (!liveGroups[amount]) {
-      liveGroups[amount] = { amount, count: 0, subTotal: 0 };
-    }
-    liveGroups[amount].count += 1;
-    liveGroups[amount].subTotal += amount;
-    liveTotal += amount;
-  }
-  const sortedGroups = Object.values(liveGroups).sort((a, b) => a.amount - b.amount);
-
   const inputClass =
     'w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500';
+  const modifiedClass =
+    'w-full rounded border border-orange-400 bg-orange-50 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500';
+  const duplicateClass =
+    'w-full rounded border border-red-400 bg-red-50 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500';
+
+  const bookOptions = useMemo(() => {
+    const base = new Set(books.map((b) => b.bookNumber));
+    receipts.forEach((r) => base.add(r.bookNumber));
+    return Array.from(base);
+  }, [books, receipts]);
+
+  const renderBookSelect = (
+    value: string,
+    onChange: (value: string) => void,
+    onKeyDown: (e: KeyboardEvent<HTMLSelectElement>) => void,
+    isDuplicate: boolean,
+    rowId: string
+  ): ReactElement => (
+    <select
+      value={value}
+      onChange={(e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
+      onKeyDown={(e: KeyboardEvent<HTMLSelectElement>) => onKeyDown(e)}
+      ref={(el) => {
+        inputRefs.current[`${rowId}-bookNumber`] = el;
+      }}
+      className={isDuplicate ? duplicateClass : inputClass}
+    >
+      <option value="">Select book</option>
+      {bookOptions.map((bn) => (
+        <option key={bn} value={bn}>
+          {bn}
+        </option>
+      ))}
+    </select>
+  );
+
+  const renderInput = (
+    value: string,
+    type: 'text' | 'number',
+    onChange: (value: string) => void,
+    onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void,
+    isDuplicate: boolean,
+    isModified: boolean,
+    rowId: string,
+    field: keyof ReceiptInput
+  ): ReactElement => (
+    <input
+      type={type}
+      min="0"
+      step="1"
+      value={value}
+      onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => onKeyDown(e)}
+      ref={(el) => {
+        inputRefs.current[`${rowId}-${field}`] = el;
+      }}
+      className={
+        isDuplicate ? duplicateClass : isModified ? modifiedClass : inputClass
+      }
+    />
+  );
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -281,23 +601,24 @@ export default function ReceiptEntry(): ReactElement {
                   {selectedSevak.mandal} &middot; {selectedSevak.kshetra}
                 </p>
                 <p className="text-xs text-slate-500">
-                  Assigned books: {books.map((b) => b.bookNumber).join(', ') || 'None'}
+                  Assigned books:{' '}
+                  {books.map((b) => `${b.bookNumber} (${b.status})`).join(', ') || 'None'}
                 </p>
               </div>
             </div>
-            {summary && (
+            {liveSummary && (
               <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-3">
                 <div>
                   <p className="text-xs text-slate-500">Grand Total</p>
-                  <p className="text-lg font-bold text-slate-800">{formatINR(summary.grandTotal)}</p>
+                  <p className="text-lg font-bold text-slate-800">{formatINR(liveSummary.grandTotal)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Receipts</p>
-                  <p className="text-lg font-bold text-slate-800">{summary.totalCount}</p>
+                  <p className="text-lg font-bold text-slate-800">{liveSummary.totalCount}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Books</p>
-                  <p className="text-lg font-bold text-slate-800">{books.length}</p>
+                  <p className="text-lg font-bold text-slate-800">{liveSummary.uniqueBooks}</p>
                 </div>
               </div>
             )}
@@ -320,98 +641,187 @@ export default function ReceiptEntry(): ReactElement {
                 <th className="px-3 py-2 font-medium">Donor Name</th>
                 <th className="px-3 py-2 font-medium">Donor Mobile</th>
                 <th className="px-3 py-2 font-medium">Amount</th>
+                <th className="px-3 py-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((row, index) => (
-                <tr
-                  key={index}
-                  ref={index === rows.length - 1 ? lastRowRef : undefined}
-                >
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={row.bookNumber}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        updateRow(index, 'bookNumber', e.target.value)
-                      }
-                      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) =>
-                        handleKeyDown(e, index, 'bookNumber')
-                      }
-                      ref={(el) => {
-                        inputRefs.current[`${index}-bookNumber`] = el;
-                      }}
-                      className={inputClass}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={row.receiptNo}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        updateRow(index, 'receiptNo', e.target.value)
-                      }
-                      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) =>
-                        handleKeyDown(e, index, 'receiptNo')
-                      }
-                      ref={(el) => {
-                        inputRefs.current[`${index}-receiptNo`] = el;
-                      }}
-                      className={inputClass}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={row.donorName}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        updateRow(index, 'donorName', e.target.value)
-                      }
-                      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) =>
-                        handleKeyDown(e, index, 'donorName')
-                      }
-                      ref={(el) => {
-                        inputRefs.current[`${index}-donorName`] = el;
-                      }}
-                      className={inputClass}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={row.donorMobile}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        updateRow(index, 'donorMobile', e.target.value)
-                      }
-                      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) =>
-                        handleKeyDown(e, index, 'donorMobile')
-                      }
-                      ref={(el) => {
-                        inputRefs.current[`${index}-donorMobile`] = el;
-                      }}
-                      className={inputClass}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={row.amount}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        updateRow(index, 'amount', e.target.value)
-                      }
-                      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) =>
-                        handleKeyDown(e, index, 'amount')
-                      }
-                      ref={(el) => {
-                        inputRefs.current[`${index}-amount`] = el;
-                      }}
-                      className={inputClass}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {receipts.map((receipt) => {
+                const display = getExistingDisplay(receipt);
+                const isDup = duplicateIds.has(receipt.id);
+                const isModified = isExistingModified(receipt);
+                return (
+                  <tr
+                    key={receipt.id}
+                    className={isModified ? 'bg-orange-50' : ''}
+                  >
+                    <td className="px-2 py-1.5 align-top">
+                      {renderBookSelect(
+                        display.bookNumber,
+                        (v) => updateExisting(receipt, 'bookNumber', v),
+                        (e) => handleKeyDown(e, receipt.id, 'bookNumber'),
+                        isDup,
+                        receipt.id
+                      )}
+                      {isDup && (
+                        <p className="mt-0.5 text-xs text-red-600">Duplicate receipt</p>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        display.receiptNo,
+                        'text',
+                        (v) => updateExisting(receipt, 'receiptNo', v),
+                        (e) => handleKeyDown(e, receipt.id, 'receiptNo'),
+                        isDup,
+                        isFieldModified(receipt, 'receiptNo'),
+                        receipt.id,
+                        'receiptNo'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        display.donorName,
+                        'text',
+                        (v) => updateExisting(receipt, 'donorName', v),
+                        (e) => handleKeyDown(e, receipt.id, 'donorName'),
+                        false,
+                        isFieldModified(receipt, 'donorName'),
+                        receipt.id,
+                        'donorName'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        display.donorMobile,
+                        'text',
+                        (v) => updateExisting(receipt, 'donorMobile', v),
+                        (e) => handleKeyDown(e, receipt.id, 'donorMobile'),
+                        false,
+                        isFieldModified(receipt, 'donorMobile'),
+                        receipt.id,
+                        'donorMobile'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        display.amount,
+                        'number',
+                        (v) => updateExisting(receipt, 'amount', v),
+                        (e) => handleKeyDown(e, receipt.id, 'amount'),
+                        false,
+                        isFieldModified(receipt, 'amount'),
+                        receipt.id,
+                        'amount'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void saveExisting(receipt)}
+                          disabled={isSaving || (!isModified && !isDup)}
+                          className="flex items-center gap-1 rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Save size={14} />
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteExisting(receipt)}
+                          className="rounded bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
+                          title="Delete"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {drafts.map((draft, index) => {
+                const rowId = `draft-${index}`;
+                const isDup = duplicateIds.has(rowId);
+                const isLast = index === drafts.length - 1;
+                return (
+                  <tr
+                    key={rowId}
+                    ref={isLast ? lastRowRef : undefined}
+                    className="bg-slate-50"
+                  >
+                    <td className="px-2 py-1.5 align-top">
+                      {renderBookSelect(
+                        draft.bookNumber,
+                        (v) => updateDraft(index, 'bookNumber', v),
+                        (e) => handleKeyDown(e, rowId, 'bookNumber'),
+                        isDup,
+                        rowId
+                      )}
+                      {isDup && (
+                        <p className="mt-0.5 text-xs text-red-600">Duplicate receipt</p>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        draft.receiptNo,
+                        'text',
+                        (v) => updateDraft(index, 'receiptNo', v),
+                        (e) => handleKeyDown(e, rowId, 'receiptNo'),
+                        isDup,
+                        false,
+                        rowId,
+                        'receiptNo'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        draft.donorName,
+                        'text',
+                        (v) => updateDraft(index, 'donorName', v),
+                        (e) => handleKeyDown(e, rowId, 'donorName'),
+                        false,
+                        false,
+                        rowId,
+                        'donorName'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        draft.donorMobile,
+                        'text',
+                        (v) => updateDraft(index, 'donorMobile', v),
+                        (e) => handleKeyDown(e, rowId, 'donorMobile'),
+                        false,
+                        false,
+                        rowId,
+                        'donorMobile'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      {renderInput(
+                        draft.amount,
+                        'number',
+                        (v) => updateDraft(index, 'amount', v),
+                        (e) => handleKeyDown(e, rowId, 'amount'),
+                        false,
+                        false,
+                        rowId,
+                        'amount'
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 align-top">
+                      <button
+                        type="button"
+                        onClick={() => removeDraft(index)}
+                        className="rounded bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                        title="Remove row"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -419,7 +829,7 @@ export default function ReceiptEntry(): ReactElement {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={addRow}
+            onClick={addDraft}
             className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
           >
             <Plus size={16} />
@@ -427,12 +837,12 @@ export default function ReceiptEntry(): ReactElement {
           </button>
           <button
             type="button"
-            onClick={() => void handleSave()}
+            onClick={() => void handleSaveAll()}
             disabled={isSaving || !selectedSevak}
             className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save size={16} />
-            {isSaving ? 'Saving...' : 'Save Receipts'}
+            {isSaving ? 'Saving...' : 'Save All Changes'}
           </button>
         </div>
       </div>
@@ -444,11 +854,11 @@ export default function ReceiptEntry(): ReactElement {
             <h2 className="font-bold text-slate-800">Live Calculation</h2>
           </div>
 
-          {sortedGroups.length === 0 ? (
+          {liveSummary.groups.length === 0 ? (
             <p className="text-sm text-slate-500">Enter amounts to see the breakdown.</p>
           ) : (
             <div className="space-y-2">
-              {sortedGroups.map((group) => (
+              {liveSummary.groups.map((group) => (
                 <div
                   key={group.amount}
                   className="flex items-center justify-between text-sm"
@@ -467,11 +877,15 @@ export default function ReceiptEntry(): ReactElement {
           <div className="mt-4 border-t border-slate-100 pt-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-slate-600">Total Count</span>
-              <span className="font-bold text-slate-800">{rows.filter((r) => Number(r.amount) > 0).length}</span>
+              <span className="font-bold text-slate-800">{liveSummary.totalCount}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-600">Unique Books</span>
+              <span className="font-bold text-slate-800">{liveSummary.uniqueBooks}</span>
             </div>
             <div className="mt-1 flex items-center justify-between text-lg">
               <span className="font-bold text-slate-800">Grand Total</span>
-              <span className="font-bold text-orange-700">{formatINR(liveTotal)}</span>
+              <span className="font-bold text-orange-700">{formatINR(liveSummary.grandTotal)}</span>
             </div>
           </div>
         </div>

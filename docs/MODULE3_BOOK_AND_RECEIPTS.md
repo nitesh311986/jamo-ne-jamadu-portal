@@ -12,7 +12,11 @@ This module implements the **Book Allocation** and **Receipt (Seva)** entry flow
 | GET | `/api/v1/books/sevak/:sevakId` | List books assigned to a sevak |
 | POST | `/api/v1/receipts` | Create one or many receipts for a sevak |
 | GET | `/api/v1/receipts/search` | Search by `bookNumber`, `receiptNo`, `donorName`, `donorMobile` |
+| GET | `/api/v1/receipts/sevak/:sevakId` | List receipts for a sevak with book metadata |
 | GET | `/api/v1/receipts/sevak/:sevakId/summary` | Real-time aggregation by amount |
+| PUT | `/api/v1/receipts/:receiptId` | Update a single receipt |
+| DELETE | `/api/v1/receipts/:receiptId` | Delete a single receipt and recalculate book status |
+| POST | `/api/v1/receipts/bulk-sync` | Synchronize updates and additions for a sevak |
 | GET | `/api/v1/receipts/export/excel` | Download all receipts + summary as `.xlsx` |
 
 All endpoints require a valid JWT (`authenticateToken`).
@@ -155,6 +159,44 @@ model SevaReceipt {
 ```
 
 `@@unique([bookNumber, receiptNo])` guarantees receipt uniqueness at the database level, and `@unique` on `BookAllocation.bookNumber` guarantees a book is assigned to only one sevak.
+
+## Receipt Synchronization
+
+### Backend bulk-sync algorithm
+
+`POST /api/v1/receipts/bulk-sync` runs inside a `prisma.$transaction`:
+
+1. Verify that the `sevakId` exists and that all `updates` reference receipts owned by that sevak.
+2. Normalize every `addition` and `update`. `receiptNo` and `bookNumber` are trimmed; `donorMobile` is stripped to digits; `amount` must be positive.
+3. Build a unique key map of `bookNumber|receiptNo` across the request.
+   - A collision within the payload returns `409 Duplicate receipt in request: <bookNumber> / <receiptNo>`.
+4. In the transaction:
+   - Apply each update. If `receiptNo` changes, verify no other row under the same `bookNumber` already uses the new number.
+   - Insert new receipts and validate against the database for the same `bookNumber + receiptNo` collision. On conflict, the transaction rolls back and returns `409 Receipt already exists: <bookNumber> / <receiptNo>`.
+   - For every affected `bookNumber`, recompute the `BookAllocation` status:
+     - `ASSIGNED` when no receipts remain.
+     - `SUBMITTED` when the numeric receipt numbers are a complete `1..N` sequence with no gaps.
+     - `PARTIALLY_SUBMITTED` in all other cases (gaps, non-numeric, or out-of-sequence numbers).
+5. Return the refreshed receipt list and an aggregate summary (denomination groups, grand total, total count, and unique book count).
+
+### Frontend optimistic UI
+
+`client/src/pages/ReceiptEntry.tsx` maintains three local states:
+
+- `receipts` — committed rows loaded from the server.
+- `edits` — pending changes to committed rows.
+- `drafts` — new, unsaved rows.
+
+As the volunteer types, the live-calculation card recalculates denomination counts, grand total, receipt count, and unique book count using the merged view of `receipts + edits + drafts`. Rows with unsaved modifications are highlighted with an orange border/background, and real-time duplicate detection flags any `bookNumber + receiptNo` that already exists in the saved table or other rows.
+
+## Validation rules
+
+- `bookNumber` and `receiptNo` are trimmed and non-empty.
+- `bookNumber + receiptNo` must be unique per book.
+- Duplicate `bookNumber + receiptNo` pairs inside the same request (across both updates and additions) are rejected.
+- `donorMobile` is optional, but if supplied it must contain at least 10 digits after stripping non-numeric characters.
+- `amount` must be a positive number.
+- Books are marked `ASSIGNED`, `SUBMITTED`, or `PARTIALLY_SUBMITTED` based on the receipt numbers currently recorded under them.
 
 ## Files added / modified
 

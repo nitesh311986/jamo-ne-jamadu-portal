@@ -1,3 +1,8 @@
+export interface BookMeta {
+  status: 'ASSIGNED' | 'SUBMITTED' | 'PARTIALLY_SUBMITTED';
+  assignedAt: string;
+}
+
 export interface Receipt {
   id: string;
   sevakId: string;
@@ -9,6 +14,7 @@ export interface Receipt {
   entryDate: string;
   createdAt: string;
   sevak?: { sevakCode: string; fullName: string; mandal: string };
+  book?: BookMeta | null;
 }
 
 export interface ReceiptInput {
@@ -42,4 +48,34 @@ export interface ReceiptSummaryResponse {
   groups: ReceiptSummaryGroup[];
   grandTotal: number;
   totalCount: number;
+  uniqueBooks?: number;
+}
+
+export interface ReceiptUpdateItem {
+  receiptId: string;
+  receiptNo?: string;
+  donorName?: string;
+  donorMobile?: string | null;
+  amount?: number;
+}
+
+export interface NewReceiptItem {
+  bookNumber: string;
+  receiptNo: string;
+  donorName: string;
+  donorMobile?: string | null;
+  amount: number;
+  entryDate?: string | null;
+}
+
+export interface BulkSyncRequest {
+  sevakId: string;
+  updates: ReceiptUpdateItem[];
+  additions: NewReceiptItem[];
+}
+
+export interface BulkSyncResponse {
+  sevak: { id: string; sevakCode: string; fullName: string; mandal: string };
+  receipts: Receipt[];
+  summary: ReceiptSummaryResponse;
 }
