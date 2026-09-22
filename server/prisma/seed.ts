@@ -9,24 +9,23 @@ async function main(): Promise<void> {
   const superAdminPassword = await bcrypt.hash('BapsAnand@2026', 10);
   const volunteerPassword = await bcrypt.hash('Sevak@123', 10);
 
-
   const superAdmin = await prisma.user.upsert({
     where: { email: 'admin@anandbaps.org' },
     create: {
       email: 'admin@anandbaps.org',
       passwordHash: superAdminPassword,
-      fullName: 'Anand Mandir Admin',
+      fullName: 'Anand Mandir Super Admin',
       phoneNumber: '9879549734',
       role: RoleName.SUPER_ADMIN,
     },
     update: {
-      fullName: 'Anand Mandir Admin',
+      fullName: 'Anand Mandir Super Admin',
       phoneNumber: '9879549734',
       role: RoleName.SUPER_ADMIN,
     },
   });
 
-  const manager = await prisma.user.upsert({
+  const volunteer = await prisma.user.upsert({
     where: { email: 'volunteer@anandbaps.org' },
     create: {
       email: 'volunteer@anandbaps.org',
@@ -42,7 +41,9 @@ async function main(): Promise<void> {
     },
   });
 
-  console.log('Database seeded successfully.');
+  console.log('Database seeded successfully:');
+  console.log(`- Super Admin: ${superAdmin.email}`);
+  console.log(`- Volunteer:   ${volunteer.email}`);
 }
 
 main()

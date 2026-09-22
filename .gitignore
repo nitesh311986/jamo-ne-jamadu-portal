@@ -6,3 +6,5 @@ build/
 logs/*.log
 *.tsbuildinfo
 .DS_Store
+.env
+.env.*
