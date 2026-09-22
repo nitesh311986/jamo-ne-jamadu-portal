@@ -236,10 +236,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /books/assign:
+  /books/batch-assign:
     post:
-      summary: Assign a book number to a sevak
-      operationId: assignBook
+      summary: Assign multiple unique book numbers to a sevak
+      operationId: batchAssignBooks
       tags:
         - Books
       requestBody:
@@ -247,16 +247,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AssignBookRequest'
+              $ref: '#/components/schemas/BatchAssignBooksRequest'
       responses:
         '201':
-          description: Book assigned
+          description: Books assigned
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BookResponse'
+                $ref: '#/components/schemas/BatchAssignBooksResponse'
         '400':
-          description: Validation error
+          description: Validation error or duplicate book numbers within the request
           content:
             application/json:
               schema:
@@ -268,7 +268,95 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Book number already assigned
+          description: One or more book numbers already exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /books/{bookId}:
+    put:
+      summary: Update a book number
+      operationId: updateBook
+      tags:
+        - Books
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBookRequest'
+      responses:
+        '200':
+          description: Book number updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Book allocation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Book number already assigned elsewhere
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a book allocation
+      operationId: deleteBook
+      tags:
+        - Books
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Book allocation deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Book has existing logged receipts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Book allocation not found
           content:
             application/json:
               schema:
@@ -420,6 +508,159 @@ paths:
                 $ref: '#/components/schemas/ReceiptSummaryResponse'
         '404':
           description: Sevak not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /receipts/sevak/{sevakId}:
+    get:
+      summary: List all receipts for a sevak with book metadata
+      operationId: getSevakReceipts
+      tags:
+        - Receipts
+      parameters:
+        - in: path
+          name: sevakId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of receipts with sevak and book metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SevakReceiptsResponse'
+        '404':
+          description: Sevak not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /receipts/{receiptId}:
+    put:
+      summary: Update a single receipt
+      operationId: updateReceipt
+      tags:
+        - Receipts
+      parameters:
+        - in: path
+          name: receiptId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReceiptBody'
+      responses:
+        '200':
+          description: Receipt updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Receipt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Duplicate receipt number in this book
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a single receipt
+      operationId: deleteReceipt
+      tags:
+        - Receipts
+      parameters:
+        - in: path
+          name: receiptId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Receipt deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Receipt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /receipts/bulk-sync:
+    post:
+      summary: Synchronize receipt updates and additions for a sevak
+      operationId: bulkSyncReceipts
+      tags:
+        - Receipts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkSyncRequest'
+      responses:
+        '200':
+          description: Receipts synchronized with aggregate summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkSyncResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Duplicate receipt in request or database
           content:
             application/json:
               schema:
@@ -727,6 +968,49 @@ components:
         book:
           $ref: '#/components/schemas/BookAllocation'
 
+    BatchAssignBooksRequest:
+      type: object
+      required:
+        - sevakId
+        - bookNumbers
+      properties:
+        sevakId:
+          type: string
+          format: uuid
+        bookNumbers:
+          type: array
+          items:
+            type: string
+
+    BatchAssignBooksResponse:
+      type: object
+      required:
+        - books
+        - count
+      properties:
+        books:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookAllocation'
+        count:
+          type: integer
+
+    UpdateBookRequest:
+      type: object
+      required:
+        - bookNumber
+      properties:
+        bookNumber:
+          type: string
+
+    MessageResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+
     BookListResponse:
       type: object
       required:
@@ -890,6 +1174,146 @@ components:
           type: number
         totalCount:
           type: integer
+        uniqueBooks:
+          type: integer
+
+    BookMeta:
+      type: object
+      required:
+        - status
+        - assignedAt
+      properties:
+        status:
+          type: string
+          enum:
+            - ASSIGNED
+            - SUBMITTED
+            - PARTIALLY_SUBMITTED
+        assignedAt:
+          type: string
+          format: date-time
+
+    ReceiptWithBook:
+      allOf:
+        - $ref: '#/components/schemas/Receipt'
+        - type: object
+          properties:
+            book:
+              $ref: '#/components/schemas/BookMeta'
+
+    ReceiptResponse:
+      type: object
+      required:
+        - receipt
+      properties:
+        receipt:
+          $ref: '#/components/schemas/ReceiptWithBook'
+
+    UpdateReceiptBody:
+      type: object
+      properties:
+        receiptNo:
+          type: string
+        donorName:
+          type: string
+        donorMobile:
+          type: string
+          nullable: true
+        amount:
+          type: number
+          minimum: 0
+
+    SevakReceiptsResponse:
+      type: object
+      required:
+        - sevak
+        - receipts
+      properties:
+        sevak:
+          $ref: '#/components/schemas/SevakStub'
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptWithBook'
+
+    BulkSyncRequest:
+      type: object
+      required:
+        - sevakId
+        - updates
+        - additions
+      properties:
+        sevakId:
+          type: string
+          format: uuid
+        updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptUpdateItem'
+        additions:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewReceiptItem'
+
+    ReceiptUpdateItem:
+      type: object
+      required:
+        - receiptId
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+        receiptNo:
+          type: string
+        donorName:
+          type: string
+        donorMobile:
+          type: string
+          nullable: true
+        amount:
+          type: number
+          minimum: 0
+
+    NewReceiptItem:
+      type: object
+      required:
+        - bookNumber
+        - receiptNo
+        - donorName
+        - amount
+      properties:
+        bookNumber:
+          type: string
+        receiptNo:
+          type: string
+        donorName:
+          type: string
+        donorMobile:
+          type: string
+          nullable: true
+        amount:
+          type: number
+          minimum: 0
+        entryDate:
+          type: string
+          format: date-time
+          nullable: true
+
+    BulkSyncResponse:
+      type: object
+      required:
+        - sevak
+        - receipts
+        - summary
+      properties:
+        sevak:
+          $ref: '#/components/schemas/SevakStub'
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptWithBook'
+        summary:
+          $ref: '#/components/schemas/ReceiptSummaryResponse'
 
     Error:
       type: object

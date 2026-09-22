@@ -46,7 +46,7 @@ const revenueData = [
 const quickActions = [
   { label: 'Register Sevak', to: '/sevaks/register', icon: UserPlus },
   { label: 'Find Sevak', to: '/sevaks', icon: Search },
-  { label: 'Book Allocation', to: '/receipts/entry', icon: BookOpen },
+  { label: 'Book Collection', to: '/receipts/entry', icon: BookOpen },
   { label: 'Receipt Search', to: '/receipts/search', icon: Receipt },
   { label: 'Manage Users', to: '/admin/users', icon: Shield },
 ];
