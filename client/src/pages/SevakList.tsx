@@ -2,11 +2,10 @@ import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, FileDown, Loader2, Plus, Search } from 'lucide-react';
 import api from '../api/axios';
+import PaginationControls from '../components/common/PaginationControls';
 import type { Sevak, SevakSearchResponse } from '../types/sevak';
 import type { ApiError } from '../types/auth';
 import type { AxiosError } from 'axios';
-
-const PAGE_SIZE = 20;
 
 export default function SevakList(): ReactElement {
   const [query, setQuery] = useState<string>('');
@@ -14,6 +13,7 @@ export default function SevakList(): ReactElement {
   const [sevaks, setSevaks] = useState<Sevak[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -32,7 +32,7 @@ export default function SevakList(): ReactElement {
       setError('');
       try {
         const response = await api.get<SevakSearchResponse>('/api/v1/sevaks/search', {
-          params: { q: debouncedQuery, page, limit: PAGE_SIZE },
+          params: { q: debouncedQuery, page, limit: pageSize },
         });
         setSevaks(response.data.sevaks);
         setTotal(response.data.total);
@@ -45,7 +45,7 @@ export default function SevakList(): ReactElement {
       }
     }
     void load();
-  }, [debouncedQuery, page]);
+  }, [debouncedQuery, page, pageSize]);
 
   const handleSearchSubmit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
@@ -80,9 +80,7 @@ export default function SevakList(): ReactElement {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const canGoPrevious = page > 1;
-  const canGoNext = page < totalPages;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const inputClass =
     'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500';
@@ -211,26 +209,19 @@ export default function SevakList(): ReactElement {
               </table>
             </div>
 
-            {totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={!canGoPrevious}
-                  className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-slate-500">
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={!canGoNext}
-                  className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
+            {total > 0 && (
+              <PaginationControls
+                currentPage={page}
+                totalPages={totalPages}
+                totalCount={total}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setPage(1);
+                }}
+                isLoading={isLoading}
+              />
             )}
           </>
         )}

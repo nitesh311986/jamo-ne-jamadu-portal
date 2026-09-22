@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import prisma from '../lib/prisma';
 import { logAuditEvent, type AuditDetails } from '../utils/audit';
 import logger from '../utils/logger';
+import { parsePaginationParams } from '../utils/pagination';
 
 interface ReceiptItem {
   sevakId?: string;
@@ -167,11 +168,7 @@ export async function createReceipts(
 }
 
 export async function searchReceipts(req: Request, res: Response): Promise<void> {
-  const rawPage = parseInt(String(req.query.page ?? '1'), 10);
-  const rawLimit = parseInt(String(req.query.limit ?? '20'), 10);
-  const page = Math.max(1, Number.isNaN(rawPage) ? 1 : rawPage);
-  const limit = Math.max(1, Math.min(100, Number.isNaN(rawLimit) ? 20 : rawLimit));
-  const skip = (page - 1) * limit;
+  const { page, limit, skip, take } = parsePaginationParams(req.query);
 
   const where: Prisma.SevaReceiptWhereInput = {};
 
@@ -188,17 +185,17 @@ export async function searchReceipts(req: Request, res: Response): Promise<void>
   }
 
   try {
-    const [receipts, total] = await Promise.all([
+    const [total, receipts] = await prisma.$transaction([
+      prisma.sevaReceipt.count({ where }),
       prisma.sevaReceipt.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy: { createdAt: 'desc' },
         include: {
           sevak: { select: { sevakCode: true, fullName: true, mandal: true } },
         },
       }),
-      prisma.sevaReceipt.count({ where }),
     ]);
 
     const formatted = receipts.map((r) => ({
@@ -439,6 +436,7 @@ export async function getSevakReceipts(
   res: Response
 ): Promise<void> {
   const { sevakId } = req.params;
+  const { page, limit, skip, take } = parsePaginationParams(req.query);
 
   try {
     const sevak = await prisma.sevak.findUnique({
@@ -451,21 +449,34 @@ export async function getSevakReceipts(
       return;
     }
 
-    const [receipts, books] = await Promise.all([
+    const where = { sevakId };
+
+    const [total, receipts, books, groups, uniqueBookNumbers] = await prisma.$transaction([
+      prisma.sevaReceipt.count({ where }),
       prisma.sevaReceipt.findMany({
-        where: { sevakId },
-        orderBy: [
-          { entryDate: 'desc' },
-          { bookNumber: 'asc' },
-          { receiptNo: 'asc' },
-        ],
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
         include: {
           sevak: { select: { sevakCode: true, fullName: true, mandal: true } },
         },
       }),
       prisma.bookAllocation.findMany({
-        where: { sevakId },
+        where,
         select: { bookNumber: true, status: true, assignedAt: true },
+      }),
+      prisma.sevaReceipt.groupBy({
+        by: ['amount'],
+        where,
+        orderBy: { amount: 'asc' },
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
+      prisma.sevaReceipt.findMany({
+        where,
+        select: { bookNumber: true },
+        distinct: ['bookNumber'],
       }),
     ]);
 
@@ -481,7 +492,44 @@ export async function getSevakReceipts(
       book: bookMap.get(r.bookNumber) ?? null,
     }));
 
-    res.status(200).json({ sevak, receipts: formatted });
+    const summaryGroups = Object.values(
+      groups.reduce(
+        (acc, g) => {
+          const amount = Number(g.amount);
+          const count = Number(
+            (g._count as { _all?: number | null } | undefined)?._all ?? 0
+          );
+          const subTotal = Number((g._sum as { amount?: unknown } | undefined)?.amount ?? 0);
+          const key = amount.toFixed(2);
+          if (!acc[key]) {
+            acc[key] = { amount, count: 0, subTotal: 0 };
+          }
+          acc[key].count += count;
+          acc[key].subTotal += subTotal;
+          return acc;
+        },
+        {} as Record<string, { amount: number; count: number; subTotal: number }>
+      )
+    ).sort((a, b) => a.amount - b.amount);
+
+    const grandTotal = summaryGroups.reduce((sum, g) => sum + g.subTotal, 0);
+    const totalCount = summaryGroups.reduce((sum, g) => sum + g.count, 0);
+    const uniqueBooks = uniqueBookNumbers.length;
+
+    res.status(200).json({
+      sevak,
+      receipts: formatted,
+      total,
+      page,
+      limit,
+      summary: {
+        sevak,
+        groups: summaryGroups,
+        grandTotal,
+        totalCount,
+        uniqueBooks,
+      },
+    });
   } catch (err) {
     logger.error('Get sevak receipts error', { error: err });
     res.status(500).json({ error: 'Internal server error' });

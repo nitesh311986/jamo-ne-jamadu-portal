@@ -1,13 +1,14 @@
 import { useEffect, useState, type ChangeEvent, type ReactElement } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileDown, Loader2, Receipt as ReceiptIcon, Search } from 'lucide-react';
 import api from '../api/axios';
+import PaginationControls from '../components/common/PaginationControls';
 import { formatINR } from '../utils/currency';
 import type { Receipt, ReceiptSearchResponse } from '../types/receipt';
 import type { ApiError } from '../types/auth';
 import type { AxiosError } from 'axios';
 
-const PAGE_SIZE = 20;
+const ALLOWED_LIMITS = [10, 20, 50];
 
 export default function ReceiptSearch(): ReactElement {
   const [bookNumber, setBookNumber] = useState<string>('');
@@ -15,9 +16,22 @@ export default function ReceiptSearch(): ReactElement {
   const [donorName, setDonorName] = useState<string>('');
   const [donorMobile, setDonorMobile] = useState<string>('');
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const parsePageFromUrl = (value: string | null): number => {
+    const parsed = parseInt(value ?? '1', 10);
+    return Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
+  };
+
+  const parseLimitFromUrl = (value: string | null): number => {
+    const parsed = parseInt(value ?? '10', 10);
+    return ALLOWED_LIMITS.includes(parsed) ? parsed : 10;
+  };
+
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [total, setTotal] = useState<number>(0);
-  const [page, setPage] = useState<number>(1);
+  const [page, setPage] = useState<number>(parsePageFromUrl(searchParams.get('page')));
+  const [pageSize, setPageSize] = useState<number>(parseLimitFromUrl(searchParams.get('limit')));
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -43,7 +57,7 @@ export default function ReceiptSearch(): ReactElement {
       setIsLoading(true);
       setError('');
       try {
-        const params: Record<string, string | number> = { page, limit: PAGE_SIZE };
+        const params: Record<string, string | number> = { page, limit: pageSize };
         if (debouncedBook) params.bookNumber = debouncedBook;
         if (debouncedReceipt) params.receiptNo = debouncedReceipt;
         if (debouncedName) params.donorName = debouncedName;
@@ -63,7 +77,26 @@ export default function ReceiptSearch(): ReactElement {
       }
     }
     void load();
-  }, [debouncedBook, debouncedReceipt, debouncedName, debouncedMobile, page]);
+  }, [debouncedBook, debouncedReceipt, debouncedName, debouncedMobile, page, pageSize]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (debouncedBook) params.set('bookNumber', debouncedBook);
+    if (debouncedReceipt) params.set('receiptNo', debouncedReceipt);
+    if (debouncedName) params.set('donorName', debouncedName);
+    if (debouncedMobile) params.set('donorMobile', debouncedMobile);
+    params.set('page', String(page));
+    params.set('limit', String(pageSize));
+    setSearchParams(params, { replace: true });
+  }, [
+    debouncedBook,
+    debouncedReceipt,
+    debouncedName,
+    debouncedMobile,
+    page,
+    pageSize,
+    setSearchParams,
+  ]);
 
   const handleDownload = async (): Promise<void> => {
     setIsExporting(true);
@@ -92,9 +125,7 @@ export default function ReceiptSearch(): ReactElement {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const canGoPrevious = page > 1;
-  const canGoNext = page < totalPages;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const inputClass =
     'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500';
@@ -236,26 +267,19 @@ export default function ReceiptSearch(): ReactElement {
             ))}
           </div>
 
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={!canGoPrevious}
-                className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-slate-500">
-                Page {page} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={!canGoNext}
-                className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+          {total > 0 && (
+            <PaginationControls
+              currentPage={page}
+              totalPages={totalPages}
+              totalCount={total}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setPage(1);
+              }}
+              isLoading={isLoading}
+            />
           )}
         </>
       )}
