@@ -186,8 +186,8 @@ export default function ReceiptEntry(): ReactElement {
     const seen = new Map<string, string[]>();
     const dupes = new Set<string>();
     for (const row of allKeyedRows) {
-      if (!row.bookNumber || !row.receiptNo) continue;
-      const key = `${row.bookNumber}|${row.receiptNo}`;
+      if (!row.receiptNo) continue;
+      const key = row.receiptNo;
       const list = seen.get(key) ?? [];
       list.push(row.id);
       seen.set(key, list);

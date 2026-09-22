@@ -85,15 +85,13 @@ model SevaReceipt {
   sevakId     String
   sevak       Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
   bookNumber  String   // બુક નં.
-  receiptNo   String   // પહોંચ નં.
+  receiptNo   String   @unique // પહોંચ નં.
   donorName   String?  // પ.ભ.શ્રી (Donor Name)
   donorMobile String?  // મોબાઇલ નં.
   amount      Decimal  @db.Decimal(12, 2)
   entryDate   DateTime @default(now())
   createdAt   DateTime @default(now())
 
-  @@unique([bookNumber, receiptNo])
-  @@index([receiptNo])
   @@index([bookNumber])
   @@index([donorName])
   @@index([sevakId])

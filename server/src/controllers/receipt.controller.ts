@@ -104,12 +104,11 @@ async function validateAndBuildReceipts(
     const entryDate = parseEntryDate(item.entryDate) ?? new Date();
     const bookNumber = item.bookNumber.trim();
     const receiptNo = item.receiptNo.trim();
-    const key = `${bookNumber}|${receiptNo}`;
 
-    if (seen.has(key)) {
-      throw new Error(`Duplicate receipt in request: ${bookNumber} / ${receiptNo}`);
+    if (seen.has(receiptNo)) {
+      throw new Error(`Duplicate receipt in request: ${receiptNo}`);
     }
-    seen.add(key);
+    seen.add(receiptNo);
 
     results.push({
       sevakId: item.sevakId,
@@ -134,16 +133,14 @@ export async function createReceipts(
 
     const existing = await prisma.sevaReceipt.findMany({
       where: {
-        OR: data.map((d) => ({
-          AND: [{ bookNumber: d.bookNumber }, { receiptNo: d.receiptNo }],
-        })),
+        receiptNo: { in: [...new Set(data.map((d) => d.receiptNo))] },
       },
     });
 
     if (existing.length > 0) {
       const first = existing[0];
       res.status(409).json({
-        error: `Receipt already exists: ${first.bookNumber} / ${first.receiptNo}`,
+        error: `Receipt already exists: ${first.receiptNo}`,
       });
       return;
     }
@@ -526,14 +523,13 @@ export async function updateReceipt(
       if (trimmed !== receipt.receiptNo) {
         const existing = await prisma.sevaReceipt.findFirst({
           where: {
-            bookNumber: receipt.bookNumber,
             receiptNo: trimmed,
             NOT: { id: receiptId },
           },
         });
         if (existing) {
           res.status(409).json({
-            error: `Receipt already exists: ${receipt.bookNumber} / ${trimmed}`,
+            error: `Receipt already exists: ${trimmed}`,
           });
           return;
         }
@@ -737,14 +733,13 @@ export async function bulkSyncReceipts(
         return;
       }
 
-      const key = `${bookNumber}|${receiptNo}`;
-      if (requestedKeys.has(key)) {
+      if (requestedKeys.has(receiptNo)) {
         res.status(409).json({
-          error: `Duplicate receipt in request: ${bookNumber} / ${receiptNo}`,
+          error: `Duplicate receipt in request: ${receiptNo}`,
         });
         return;
       }
-      requestedKeys.set(key, 'addition');
+      requestedKeys.set(receiptNo, 'addition');
 
       const entryDate = parseEntryDate(add.entryDate) ?? new Date();
 
@@ -779,14 +774,13 @@ export async function bulkSyncReceipts(
         return;
       }
 
-      const key = `${nextBookNumber}|${nextReceiptNo}`;
-      if (requestedKeys.has(key)) {
+      if (requestedKeys.has(nextReceiptNo)) {
         res.status(409).json({
-          error: `Duplicate receipt in request: ${nextBookNumber} / ${nextReceiptNo}`,
+          error: `Duplicate receipt in request: ${nextReceiptNo}`,
         });
         return;
       }
-      requestedKeys.set(key, upd.receiptId);
+      requestedKeys.set(nextReceiptNo, upd.receiptId);
 
       if (upd.amount !== undefined) {
         const parsed = parseAmount(upd.amount);
@@ -821,13 +815,12 @@ export async function bulkSyncReceipts(
         if (upd.receiptNo !== undefined && upd.receiptNo.trim() !== current.receiptNo) {
           const existing = await tx.sevaReceipt.findFirst({
             where: {
-              bookNumber: current.bookNumber,
               receiptNo: upd.receiptNo.trim(),
               NOT: { id: upd.receiptId },
             },
           });
           if (existing) {
-            throw new Error(`Receipt already exists: ${current.bookNumber} / ${upd.receiptNo.trim()}`);
+            throw new Error(`Receipt already exists: ${upd.receiptNo.trim()}`);
           }
           data.receiptNo = upd.receiptNo.trim();
         }
@@ -857,19 +850,14 @@ export async function bulkSyncReceipts(
       if (normalizedAdditions.length > 0) {
         const existing = await tx.sevaReceipt.findMany({
           where: {
-            OR: normalizedAdditions.map((a) => ({
-              AND: [
-                { bookNumber: a.bookNumber },
-                { receiptNo: a.receiptNo },
-              ],
-            })),
+            receiptNo: { in: [...new Set(normalizedAdditions.map((a) => a.receiptNo))] },
           },
-          select: { bookNumber: true, receiptNo: true },
+          select: { receiptNo: true },
         });
 
         if (existing.length > 0) {
           const first = existing[0];
-          throw new Error(`Receipt already exists: ${first.bookNumber} / ${first.receiptNo}`);
+          throw new Error(`Receipt already exists: ${first.receiptNo}`);
         }
 
         await tx.sevaReceipt.createMany({
