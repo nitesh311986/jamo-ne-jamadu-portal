@@ -66,6 +66,7 @@ model Sevak {
   @@index([mobile])
   @@index([fullName])
   @@index([sevakCode])
+  @@index([createdAt(sort: Desc)])
 }
 
 model BookAllocation {
@@ -78,19 +79,20 @@ model BookAllocation {
 
   @@index([bookNumber])
   @@index([sevakId])
+  @@index([assignedAt(sort: Desc)])
 }
 
 model SevaReceipt {
-  id          String   @id @default(uuid())
-  sevakId     String
-  sevak       Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
-  bookNumber  String   // બુક નં.
-  receiptNo   String   @unique // પહોંચ નં.
-  donorName   String?  // પ.ભ.શ્રી (Donor Name)
-  donorMobile String?  // મોબાઇલ નં.
-  amount      Decimal  @db.Decimal(12, 2)
-  entryDate   DateTime @default(now())
-  createdAt   DateTime @default(now())
+  id                String    @id @default(uuid())
+  sevakId           String
+  sevak             Sevak     @relation(fields: [sevakId], references: [id], onDelete: Cascade)
+  bookNumber        String    // બુક નં.
+  receiptNo         String    // પહોંચ નં. (FIXED: standalone @unique removed)
+  donorName         String?   // પ.ભ.શ્રી (Donor Name)
+  donorMobile       String?   // મોબાઇલ નં.
+  amount            Decimal   @db.Decimal(12, 2)
+  entryDate         DateTime  @default(now())
+  createdAt         DateTime  @default(now())
 
   // --- Prasad Distribution Extensions ---
   prasadDistributed Boolean   @default(false)
@@ -98,25 +100,26 @@ model SevaReceipt {
   distributedAt     DateTime?
   distributedBy     String?
 
-
+  // Enforces uniqueness ONLY per book: Book 12 can have 1..10 and Book 13 can have 1..10
   @@unique([bookNumber, receiptNo])
   @@index([receiptNo])
   @@index([bookNumber])
   @@index([donorName])
-  @@index([sevakId]) 
+  @@index([sevakId])
   @@index([prasadDistributed])
+  @@index([createdAt(sort: Desc)])
 }
 
 model PrasadDistribution {
-  id               String   @id @default(uuid())
-  sevakId          String
-  sevak            Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
-  slabTier         String   // e.g., '<500', '500-999', '1000-1999', etc.
-  eligibleBoxes    Int      @default(0)
-  distributedBoxes Int      @default(0)
-  totalReceiptsCount   Int      @default(0)
-  servedReceiptsCount  Int      @default(0)
-  updatedAt        DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  sevakId             String
+  sevak               Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
+  slabTier            String   // '<500', '500-999', '1000-1999', etc.
+  eligibleBoxes       Int      @default(0)
+  distributedBoxes    Int      @default(0)
+  totalReceiptsCount  Int      @default(0)
+  servedReceiptsCount Int      @default(0)
+  updatedAt           DateTime @updatedAt
 
   @@unique([sevakId, slabTier])
   @@index([sevakId])
