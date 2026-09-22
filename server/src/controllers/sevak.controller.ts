@@ -32,34 +32,33 @@ interface UpdateSevakBody {
   expectedContacts: number;
 }
 
-function getInitials(firstName: string, lastName: string): string {
-  const firstInitial = (firstName.trim()[0] ?? '').toUpperCase();
-  const lastInitial = (lastName.trim()[0] ?? 'X').toUpperCase();
-  return `${firstInitial}${lastInitial}`;
-}
+const YEAR = '2026';
 
-function randomFourDigits(): string {
-  return String(Math.floor(Math.random() * 10000)).padStart(4, '0');
-}
-
-async function isCodeUnique(code: string): Promise<boolean> {
-  const count = await prisma.sevak.count({
-    where: { sevakCode: code },
-  });
-  return count === 0;
+function getNamePrefix(firstName: string, lastName: string): string {
+  const firstInitial = (firstName.trim()[0] ?? 'x').toLowerCase();
+  const lastInitial = (lastName.trim()[0] ?? 'x').toLowerCase();
+  return `${firstInitial}${lastInitial}${YEAR}`;
 }
 
 export async function generateSevakCode(firstName: string, lastName: string): Promise<string> {
-  const base = getInitials(firstName, lastName);
+  const prefix = getNamePrefix(firstName, lastName);
 
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const code = `${base}${randomFourDigits()}`;
-    if (await isCodeUnique(code)) {
-      return code;
+  const existing = await prisma.sevak.findMany({
+    where: { sevakCode: { startsWith: prefix } },
+    select: { sevakCode: true },
+  });
+
+  let maxSuffix = 0;
+  for (const { sevakCode } of existing) {
+    const suffix = sevakCode.slice(prefix.length);
+    const n = parseInt(suffix, 10);
+    if (!Number.isNaN(n) && n > maxSuffix) {
+      maxSuffix = n;
     }
   }
 
-  throw new Error('Unable to generate a unique sevak code');
+  const next = (maxSuffix + 1).toString().padStart(2, '0');
+  return `${prefix}${next}`;
 }
 
 function normalizeMobile(value: string | undefined | null): string {
@@ -123,6 +122,28 @@ export async function createSevak(
   }
 
   try {
+    const mobileExists = await prisma.sevak.findFirst({
+      where: { mobile: mobile.trim() },
+    });
+    if (mobileExists) {
+      res.status(409).json({
+        error: `Mobile number ${mobile.trim()} is already registered with another Sevak`,
+      });
+      return;
+    }
+
+    if (whatsapp?.trim()) {
+      const whatsappExists = await prisma.sevak.findFirst({
+        where: { whatsapp: whatsapp.trim() },
+      });
+      if (whatsappExists) {
+        res.status(409).json({
+          error: `WhatsApp number ${whatsapp.trim()} is already registered with another Sevak`,
+        });
+        return;
+      }
+    }
+
     const sevakCode = await generateSevakCode(firstName, lastName);
 
     const sevak = await prisma.sevak.create({
@@ -300,6 +321,28 @@ export async function updateSevak(
     if (!existing) {
       res.status(404).json({ error: 'Sevak not found' });
       return;
+    }
+
+    const mobileExists = await prisma.sevak.findFirst({
+      where: { mobile: mobile.trim(), NOT: { id } },
+    });
+    if (mobileExists) {
+      res.status(409).json({
+        error: `Mobile number ${mobile.trim()} is already registered with another Sevak`,
+      });
+      return;
+    }
+
+    if (whatsapp?.trim()) {
+      const whatsappExists = await prisma.sevak.findFirst({
+        where: { whatsapp: whatsapp.trim(), NOT: { id } },
+      });
+      if (whatsappExists) {
+        res.status(409).json({
+          error: `WhatsApp number ${whatsapp.trim()} is already registered with another Sevak`,
+        });
+        return;
+      }
     }
 
     const sevak = await prisma.sevak.update({

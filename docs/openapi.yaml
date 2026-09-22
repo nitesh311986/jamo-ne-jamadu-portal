@@ -173,6 +173,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '409':
+          description: Mobile or WhatsApp already registered to another sevak
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Internal server error
           content:
@@ -313,6 +319,12 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Sevak not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Mobile or WhatsApp already registered to another sevak
           content:
             application/json:
               schema:
@@ -566,7 +578,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Duplicate receipt or conflict
+          description: Receipt already exists in the same book
           content:
             application/json:
               schema:
@@ -580,7 +592,7 @@ paths:
 
   /receipts/search:
     get:
-      summary: Search receipts by book, number, donor, or mobile
+      summary: Search receipts by book, number, donor, mobile, or sevak code
       operationId: searchReceipts
       tags:
         - Receipts
@@ -599,6 +611,11 @@ paths:
             type: string
         - in: query
           name: donorMobile
+          schema:
+            type: string
+        - in: query
+          name: sevakCode
+          description: Filter receipts by Sevak 6-character code (case-insensitive substring)
           schema:
             type: string
         - in: query
@@ -748,7 +765,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Duplicate receipt number in this book
+          description: Receipt number already exists in this book
           content:
             application/json:
               schema:
@@ -811,13 +828,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkSyncResponse'
         '400':
-          description: Validation error
+          description: Validation error or duplicate bookNumber + receiptNo in the request
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Duplicate receipt in request or database
+          description: Receipt already exists in the same book
           content:
             application/json:
               schema:
@@ -1176,6 +1193,8 @@ components:
           format: uuid
         sevakCode:
           type: string
+          description: Format {firstInitial}{lastInitial}2026{zero-padded sequence} (e.g. nb202601)
+          example: nb202601
         fullName:
           type: string
         firstName:

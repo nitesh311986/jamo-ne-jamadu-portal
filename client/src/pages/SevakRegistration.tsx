@@ -46,6 +46,10 @@ function deriveFirstAndLast(fullName: string): { firstName: string; lastName: st
 export default function SevakRegistration(): ReactElement {
   const [form, setForm] = useState<FormState>(initialForm);
   const [error, setError] = useState<string>('');
+  const [fieldErrors, setFieldErrors] = useState<{ mobile: string; whatsapp: string }>({
+    mobile: '',
+    whatsapp: '',
+  });
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [createdSevak, setCreatedSevak] = useState<Sevak | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
@@ -67,6 +71,7 @@ export default function SevakRegistration(): ReactElement {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
+    setFieldErrors({ mobile: '', whatsapp: '' });
     setIsSaving(true);
 
     const expected = parseInt(form.expectedContacts, 10);
@@ -88,9 +93,23 @@ export default function SevakRegistration(): ReactElement {
       const response = await api.post<SevakResponse>('/api/v1/sevaks', payload);
       setCreatedSevak(response.data.sevak);
       setForm(initialForm);
+      setFieldErrors({ mobile: '', whatsapp: '' });
     } catch (err) {
-      const message = (err as AxiosError<ApiError>).response?.data?.error ?? 'Failed to register sevak';
-      setError(message);
+      const axiosErr = err as AxiosError<ApiError>;
+      const status = axiosErr.response?.status;
+      const message = axiosErr.response?.data?.error ?? 'Failed to register sevak';
+      if (status === 409) {
+        const lower = message.toLowerCase();
+        if (lower.includes('mobile number')) {
+          setFieldErrors({ mobile: message, whatsapp: '' });
+        } else if (lower.includes('whatsapp number')) {
+          setFieldErrors({ mobile: '', whatsapp: message });
+        } else {
+          setError(message);
+        }
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -183,6 +202,9 @@ export default function SevakRegistration(): ReactElement {
                 required
                 className={inputClass}
               />
+              {fieldErrors.mobile && (
+                <p className="mt-1 text-xs text-red-600">{fieldErrors.mobile}</p>
+              )}
             </div>
 
             <div>
@@ -207,6 +229,9 @@ export default function SevakRegistration(): ReactElement {
                 onChange={(e) => handleChange('whatsapp', e.target.value)}
                 className={inputClass}
               />
+              {fieldErrors.whatsapp && (
+                <p className="mt-1 text-xs text-red-600">{fieldErrors.whatsapp}</p>
+              )}
             </div>
 
             <div>
@@ -296,7 +321,7 @@ export default function SevakRegistration(): ReactElement {
               Registration Successful
             </h2>
             <p className="mb-4 text-sm text-slate-500">
-              Share this unique 6-character code with the sevak.
+              Share this unique sevak code with the sevak.
             </p>
 
             <div className="mb-6 flex items-center justify-center gap-3 rounded-xl bg-slate-100 p-4">

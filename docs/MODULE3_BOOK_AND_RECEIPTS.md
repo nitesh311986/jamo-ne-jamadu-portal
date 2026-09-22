@@ -11,7 +11,7 @@ This module implements the **Book Allocation** and **Receipt (Seva)** entry flow
 | POST | `/api/v1/books/assign` | Assign a unique `bookNumber` to a `sevakId` |
 | GET | `/api/v1/books/sevak/:sevakId` | List books assigned to a sevak |
 | POST | `/api/v1/receipts` | Create one or many receipts for a sevak |
-| GET | `/api/v1/receipts/search` | Search by `bookNumber`, `receiptNo`, `donorName`, `donorMobile` |
+| GET | `/api/v1/receipts/search` | Search by `bookNumber`, `receiptNo`, `donorName`, `donorMobile`, and `sevakCode` |
 | GET | `/api/v1/receipts/sevak/:sevakId` | List receipts for a sevak with book metadata |
 | GET | `/api/v1/receipts/sevak/:sevakId/summary` | Real-time aggregation by amount |
 | PUT | `/api/v1/receipts/:receiptId` | Update a single receipt |
@@ -66,6 +66,8 @@ Accepts a bulk payload:
 - Every receipt must have `bookNumber`, `receiptNo`, `donorName`, and a positive `amount`.
 - `donorMobile` is normalized and optional; if provided it must contain at least 10 digits.
 - Duplicate `bookNumber + receiptNo` pairs are rejected both within the request and against the database.
+  - A duplicate pair inside the same request returns `400 Duplicate receipt number <receiptNo> detected within book <bookNumber>`.
+  - A pair that already exists in the database returns `409 Receipt <receiptNo> already exists in Book <bookNumber>`.
 - `entryDate` defaults to the current timestamp when omitted.
 
 On success the API returns `{ count: <number> }`.
@@ -77,6 +79,7 @@ Query parameters (all optional):
 - `receiptNo`
 - `donorName` (partial, case-insensitive match)
 - `donorMobile`
+- `sevakCode` (partial, case-insensitive match)
 - `page` (default `1`)
 - `limit` (default `20`, max `100`)
 
@@ -113,7 +116,7 @@ Streams a two-tab Excel file:
 ### Pages
 
 - `client/src/pages/ReceiptEntry.tsx` — Quick sevak search (by code, phone, or name), sevak summary banner, inline receipt entry grid with Enter-key navigation, and a live calculation card.
-- `client/src/pages/ReceiptSearch.tsx` — Filtered search across `bookNumber`, `receiptNo`, `donorName`, and `donorMobile`, with a paginated table and Excel export.
+- `client/src/pages/ReceiptSearch.tsx` — Filtered search across `bookNumber`, `receiptNo`, `donorName`, `donorMobile`, and `sevakCode`, with a paginated table and Excel export.
 
 ### Receipt entry flow
 
@@ -169,10 +172,10 @@ model SevaReceipt {
 1. Verify that the `sevakId` exists and that all `updates` reference receipts owned by that sevak.
 2. Normalize every `addition` and `update`. `receiptNo` and `bookNumber` are trimmed; `donorMobile` is stripped to digits; `amount` must be positive.
 3. Build a unique key map of `bookNumber|receiptNo` across the request.
-   - A collision within the payload returns `409 Duplicate receipt in request: <bookNumber> / <receiptNo>`.
+   - A collision within the payload returns `400 Duplicate receipt number <receiptNo> detected within book <bookNumber>`.
 4. In the transaction:
    - Apply each update. If `receiptNo` changes, verify no other row under the same `bookNumber` already uses the new number.
-   - Insert new receipts and validate against the database for the same `bookNumber + receiptNo` collision. On conflict, the transaction rolls back and returns `409 Receipt already exists: <bookNumber> / <receiptNo>`.
+   - Insert new receipts and validate against the database for the same `bookNumber + receiptNo` collision. On conflict, the transaction rolls back and returns `409 Receipt <receiptNo> already exists in Book <bookNumber>`.
    - For every affected `bookNumber`, recompute the `BookAllocation` status:
      - `ASSIGNED` when no receipts remain.
      - `SUBMITTED` when the numeric receipt numbers are a complete `1..N` sequence with no gaps.
