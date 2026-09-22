@@ -19,6 +19,19 @@ interface CreateSevakBody {
   expectedContacts: number;
 }
 
+interface UpdateSevakBody {
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  mobile: string;
+  altMobile?: string | null;
+  whatsapp?: string | null;
+  address: string;
+  mandal: string;
+  kshetra: string;
+  expectedContacts: number;
+}
+
 function getInitials(firstName: string, lastName: string): string {
   const firstInitial = (firstName.trim()[0] ?? '').toUpperCase();
   const lastInitial = (lastName.trim()[0] ?? 'X').toUpperCase();
@@ -221,6 +234,153 @@ export async function exportSevaksExcel(_req: Request, res: Response): Promise<v
     res.end();
   } catch (err) {
     logger.error('Export sevaks error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function updateSevak(
+  req: Request<{ id: string }, unknown, UpdateSevakBody>,
+  res: Response
+): Promise<void> {
+  const { id } = req.params;
+  const {
+    fullName,
+    firstName,
+    lastName,
+    mobile,
+    altMobile,
+    whatsapp,
+    address,
+    mandal,
+    kshetra,
+    expectedContacts,
+  } = req.body;
+
+  if (
+    !fullName?.trim() ||
+    !firstName?.trim() ||
+    !lastName?.trim() ||
+    !mobile?.trim() ||
+    !address?.trim() ||
+    !mandal?.trim() ||
+    !kshetra?.trim() ||
+    expectedContacts === undefined ||
+    expectedContacts === null
+  ) {
+    res.status(400).json({ error: 'Required fields are missing' });
+    return;
+  }
+
+  if (
+    typeof expectedContacts !== 'number' ||
+    !Number.isInteger(expectedContacts) ||
+    expectedContacts < 0
+  ) {
+    res.status(400).json({ error: 'expectedContacts must be a non-negative integer' });
+    return;
+  }
+
+  if (normalizeMobile(mobile).length < 10) {
+    res.status(400).json({ error: 'Mobile number must contain at least 10 digits' });
+    return;
+  }
+
+  if (altMobile && normalizeMobile(altMobile).length < 10) {
+    res.status(400).json({ error: 'Alt mobile number must contain at least 10 digits' });
+    return;
+  }
+
+  if (whatsapp && normalizeMobile(whatsapp).length < 10) {
+    res.status(400).json({ error: 'WhatsApp number must contain at least 10 digits' });
+    return;
+  }
+
+  try {
+    const existing = await prisma.sevak.findUnique({ where: { id } });
+    if (!existing) {
+      res.status(404).json({ error: 'Sevak not found' });
+      return;
+    }
+
+    const sevak = await prisma.sevak.update({
+      where: { id },
+      data: {
+        fullName: fullName.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        mobile: mobile.trim(),
+        altMobile: altMobile?.trim() || null,
+        whatsapp: whatsapp?.trim() || null,
+        address: address.trim(),
+        mandal: mandal.trim(),
+        kshetra: kshetra.trim(),
+        expectedContacts,
+      },
+    });
+
+    const actorId = req.user?.userId ?? 'unknown';
+    await logAuditEvent(actorId, 'SEVAK_UPDATE', {
+      sevakId: sevak.id,
+      sevakCode: sevak.sevakCode,
+    });
+
+    logger.info('Sevak updated', {
+      actorId,
+      sevakId: sevak.id,
+      sevakCode: sevak.sevakCode,
+    });
+
+    res.status(200).json({ sevak });
+  } catch (err) {
+    logger.error('Update sevak error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function deleteSevak(
+  req: Request<{ id: string }>,
+  res: Response
+): Promise<void> {
+  const { id } = req.params;
+
+  try {
+    const sevak = await prisma.sevak.findUnique({
+      where: { id },
+      include: { receipts: { take: 1 } },
+    });
+
+    if (!sevak) {
+      res.status(404).json({ error: 'Sevak not found' });
+      return;
+    }
+
+    const receiptCount = await prisma.sevaReceipt.count({ where: { sevakId: id } });
+    if (receiptCount > 0) {
+      res.status(400).json({ error: 'Cannot delete Sevak with active donation receipts' });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.bookAllocation.deleteMany({ where: { sevakId: id } }),
+      prisma.prasadDistribution.deleteMany({ where: { sevakId: id } }),
+      prisma.sevak.delete({ where: { id } }),
+    ]);
+
+    const actorId = req.user?.userId ?? 'unknown';
+    await logAuditEvent(actorId, 'SEVAK_DELETE', {
+      sevakId: sevak.id,
+      sevakCode: sevak.sevakCode,
+    });
+
+    logger.info('Sevak deleted', {
+      actorId,
+      sevakId: sevak.id,
+      sevakCode: sevak.sevakCode,
+    });
+
+    res.status(200).json({ message: 'Sevak deleted' });
+  } catch (err) {
+    logger.error('Delete sevak error', { error: err });
     res.status(500).json({ error: 'Internal server error' });
   }
 }

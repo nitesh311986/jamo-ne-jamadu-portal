@@ -28,8 +28,25 @@ export interface CreateSevakRequest {
   expectedContacts: number;
 }
 
+export interface UpdateSevakRequest {
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  mobile: string;
+  altMobile?: string;
+  whatsapp?: string;
+  address: string;
+  mandal: string;
+  kshetra: string;
+  expectedContacts: number;
+}
+
 export interface SevakResponse {
   sevak: Sevak;
+}
+
+export interface MessageResponse {
+  message: string;
 }
 
 export interface SevakSearchResponse {

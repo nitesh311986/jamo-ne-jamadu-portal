@@ -1,11 +1,11 @@
 import axios, { type InternalAxiosRequestConfig, type AxiosError } from 'axios';
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
+const API_BASE_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 const TOKEN_KEY = 'baps_auth_token';
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
