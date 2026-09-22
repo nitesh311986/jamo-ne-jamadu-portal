@@ -106,10 +106,13 @@ async function validateAndBuildReceipts(
     const bookNumber = item.bookNumber.trim();
     const receiptNo = item.receiptNo.trim();
 
-    if (seen.has(receiptNo)) {
-      throw new Error(`Duplicate receipt in request: ${receiptNo}`);
+    const compositeKey = `${bookNumber}|${receiptNo}`;
+    if (seen.has(compositeKey)) {
+      throw new Error(
+        `Duplicate receipt number ${receiptNo} detected within book ${bookNumber}`
+      );
     }
-    seen.add(receiptNo);
+    seen.add(compositeKey);
 
     results.push({
       sevakId: item.sevakId,
@@ -132,18 +135,22 @@ export async function createReceipts(
   try {
     const data = await validateAndBuildReceipts(req.body);
 
-    const existing = await prisma.sevaReceipt.findMany({
-      where: {
-        receiptNo: { in: [...new Set(data.map((d) => d.receiptNo))] },
-      },
-    });
-
-    if (existing.length > 0) {
-      const first = existing[0];
-      res.status(409).json({
-        error: `Receipt already exists: ${first.receiptNo}`,
+    for (const item of data) {
+      const existing = await prisma.sevaReceipt.findUnique({
+        where: {
+          bookNumber_receiptNo: {
+            bookNumber: item.bookNumber,
+            receiptNo: item.receiptNo,
+          },
+        },
       });
-      return;
+
+      if (existing) {
+        res.status(409).json({
+          error: `Receipt ${item.receiptNo} already exists in Book ${item.bookNumber}`,
+        });
+        return;
+      }
     }
 
     const created = await prisma.sevaReceipt.createMany({
@@ -170,19 +177,32 @@ export async function createReceipts(
 export async function searchReceipts(req: Request, res: Response): Promise<void> {
   const { page, limit, skip, take } = parsePaginationParams(req.query);
 
-  const where: Prisma.SevaReceiptWhereInput = {};
+  const { bookNumber, receiptNo, donorName, donorMobile, sevakCode } = req.query;
 
-  const bookNumber = String(req.query.bookNumber ?? '').trim();
-  const receiptNo = String(req.query.receiptNo ?? '').trim();
-  const donorName = String(req.query.donorName ?? '').trim();
-  const donorMobile = String(req.query.donorMobile ?? '').trim();
-
-  if (bookNumber) where.bookNumber = { equals: bookNumber };
-  if (receiptNo) where.receiptNo = { equals: receiptNo };
-  if (donorName) where.donorName = { contains: donorName, mode: 'insensitive' as const };
-  if (donorMobile) {
-    where.donorMobile = { contains: donorMobile };
-  }
+  const where: Prisma.SevaReceiptWhereInput = {
+    ...(bookNumber
+      ? { bookNumber: { contains: String(bookNumber).trim(), mode: 'insensitive' as const } }
+      : {}),
+    ...(receiptNo
+      ? { receiptNo: { contains: String(receiptNo).trim(), mode: 'insensitive' as const } }
+      : {}),
+    ...(donorName
+      ? { donorName: { contains: String(donorName).trim(), mode: 'insensitive' as const } }
+      : {}),
+    ...(donorMobile
+      ? { donorMobile: { contains: String(donorMobile).trim() } }
+      : {}),
+    ...(sevakCode
+      ? {
+          sevak: {
+            sevakCode: {
+              contains: String(sevakCode).trim().toUpperCase(),
+              mode: 'insensitive' as const,
+            },
+          },
+        }
+      : {}),
+  };
 
   try {
     const [total, receipts] = await prisma.$transaction([
@@ -193,7 +213,7 @@ export async function searchReceipts(req: Request, res: Response): Promise<void>
         take,
         orderBy: { createdAt: 'desc' },
         include: {
-          sevak: { select: { sevakCode: true, fullName: true, mandal: true } },
+          sevak: { select: { sevakCode: true, fullName: true, mobile: true, mandal: true } },
         },
       }),
     ]);
@@ -569,15 +589,17 @@ export async function updateReceipt(
         return;
       }
       if (trimmed !== receipt.receiptNo) {
-        const existing = await prisma.sevaReceipt.findFirst({
+        const existing = await prisma.sevaReceipt.findUnique({
           where: {
-            receiptNo: trimmed,
-            NOT: { id: receiptId },
+            bookNumber_receiptNo: {
+              bookNumber: receipt.bookNumber,
+              receiptNo: trimmed,
+            },
           },
         });
-        if (existing) {
+        if (existing && existing.id !== receiptId) {
           res.status(409).json({
-            error: `Receipt already exists: ${trimmed}`,
+            error: `Receipt ${trimmed} already exists in Book ${receipt.bookNumber}`,
           });
           return;
         }
@@ -781,13 +803,14 @@ export async function bulkSyncReceipts(
         return;
       }
 
-      if (requestedKeys.has(receiptNo)) {
-        res.status(409).json({
-          error: `Duplicate receipt in request: ${receiptNo}`,
+      const key = `${bookNumber}|${receiptNo}`;
+      if (requestedKeys.has(key)) {
+        res.status(400).json({
+          error: `Duplicate receipt number ${receiptNo} detected within book ${bookNumber}`,
         });
         return;
       }
-      requestedKeys.set(receiptNo, 'addition');
+      requestedKeys.set(key, 'addition');
 
       const entryDate = parseEntryDate(add.entryDate) ?? new Date();
 
@@ -822,13 +845,14 @@ export async function bulkSyncReceipts(
         return;
       }
 
-      if (requestedKeys.has(nextReceiptNo)) {
-        res.status(409).json({
-          error: `Duplicate receipt in request: ${nextReceiptNo}`,
+      const key = `${nextBookNumber}|${nextReceiptNo}`;
+      if (requestedKeys.has(key)) {
+        res.status(400).json({
+          error: `Duplicate receipt number ${nextReceiptNo} detected within book ${nextBookNumber}`,
         });
         return;
       }
-      requestedKeys.set(nextReceiptNo, upd.receiptId);
+      requestedKeys.set(key, upd.receiptId);
 
       if (upd.amount !== undefined) {
         const parsed = parseAmount(upd.amount);
@@ -861,14 +885,18 @@ export async function bulkSyncReceipts(
         const data: Prisma.SevaReceiptUpdateInput = {};
 
         if (upd.receiptNo !== undefined && upd.receiptNo.trim() !== current.receiptNo) {
-          const existing = await tx.sevaReceipt.findFirst({
+          const existing = await tx.sevaReceipt.findUnique({
             where: {
-              receiptNo: upd.receiptNo.trim(),
-              NOT: { id: upd.receiptId },
+              bookNumber_receiptNo: {
+                bookNumber: current.bookNumber,
+                receiptNo: upd.receiptNo.trim(),
+              },
             },
           });
-          if (existing) {
-            throw new Error(`Receipt already exists: ${upd.receiptNo.trim()}`);
+          if (existing && existing.id !== current.id) {
+            throw new Error(
+              `Receipt ${upd.receiptNo.trim()} already exists in Book ${current.bookNumber}`
+            );
           }
           data.receiptNo = upd.receiptNo.trim();
         }
@@ -896,16 +924,20 @@ export async function bulkSyncReceipts(
       }
 
       if (normalizedAdditions.length > 0) {
-        const existing = await tx.sevaReceipt.findMany({
-          where: {
-            receiptNo: { in: [...new Set(normalizedAdditions.map((a) => a.receiptNo))] },
-          },
-          select: { receiptNo: true },
-        });
-
-        if (existing.length > 0) {
-          const first = existing[0];
-          throw new Error(`Receipt already exists: ${first.receiptNo}`);
+        for (const add of normalizedAdditions) {
+          const existing = await tx.sevaReceipt.findUnique({
+            where: {
+              bookNumber_receiptNo: {
+                bookNumber: add.bookNumber,
+                receiptNo: add.receiptNo,
+              },
+            },
+          });
+          if (existing) {
+            throw new Error(
+              `Receipt ${add.receiptNo} already exists in Book ${add.bookNumber}`
+            );
+          }
         }
 
         await tx.sevaReceipt.createMany({
