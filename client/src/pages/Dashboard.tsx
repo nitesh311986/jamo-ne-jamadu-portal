@@ -1,63 +1,134 @@
-import type { ReactElement } from 'react';
+import { useEffect, useState, useCallback, useMemo, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, UserPlus, Search, Shield, Handshake, TrendingUp, Receipt, BookOpen } from 'lucide-react';
+import {
+  Users,
+  UserPlus,
+  BookOpen,
+  CheckCircle2,
+  IndianRupee,
+  RefreshCw,
+  ArrowRight,
+  TrendingUp,
+  Package,
+  Receipt,
+} from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { formatINR } from '../utils/currency';
+import { fetchDashboardStats, type DashboardData } from '../services/dashboard.service';
 
-interface StatItem {
+interface KpiCardProps {
   label: string;
   value: string;
-  trend?: string;
+  subtext?: string;
   icon: typeof Users;
   iconBg: string;
   iconColor: string;
 }
 
-const adminStats: StatItem[] = [
-  { label: 'Total Sevaks', value: '1,248', trend: '+1K', icon: Users, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
-  { label: 'New Registrations', value: '86', trend: '10+', icon: UserPlus, iconBg: 'bg-rose-50', iconColor: 'text-rose-500' },
-  { label: 'Active Volunteers', value: '42', trend: '8+', icon: Handshake, iconBg: 'bg-sky-50', iconColor: 'text-sky-500' },
-  { label: 'Kshetras', value: '12', trend: '$96k', icon: Search, iconBg: 'bg-amber-50', iconColor: 'text-amber-500' },
-  { label: 'Mandals', value: '96', icon: Users, iconBg: 'bg-indigo-50', iconColor: 'text-indigo-500' },
-  { label: 'Admin Tasks', value: '696', icon: Shield, iconBg: 'bg-rose-50', iconColor: 'text-rose-500' },
-];
-
-const volunteerStats: StatItem[] = [
-  { label: 'My Sevaks', value: '124', trend: '+12', icon: Users, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
-  { label: 'Registrations', value: '18', trend: '5+', icon: UserPlus, iconBg: 'bg-rose-50', iconColor: 'text-rose-500' },
-  { label: 'Kshetra Reach', value: '3', icon: Handshake, iconBg: 'bg-sky-50', iconColor: 'text-sky-500' },
-  { label: 'Contacts Added', value: '1,420', icon: Search, iconBg: 'bg-amber-50', iconColor: 'text-amber-500' },
-];
-
-const revenueData = [
-  { month: 'Jan', value: 40, primary: 25 },
-  { month: 'Feb', value: 70, primary: 50 },
-  { month: 'Mar', value: 55, primary: 35 },
-  { month: 'Apr', value: 85, primary: 55 },
-  { month: 'May', value: 45, primary: 30 },
-  { month: 'Jun', value: 35, primary: 20 },
-  { month: 'Jul', value: 60, primary: 40 },
-  { month: 'Aug', value: 50, primary: 32 },
-  { month: 'Sep', value: 75, primary: 48 },
-  { month: 'Oct', value: 65, primary: 42 },
-  { month: 'Nov', value: 80, primary: 50 },
-  { month: 'Dec', value: 55, primary: 35 },
-];
-
-const quickActions = [
-  { label: 'Register Sevak', to: '/sevaks/register', icon: UserPlus },
-  { label: 'Find Sevak', to: '/sevaks', icon: Search },
-  { label: 'Book Collection', to: '/receipts/entry', icon: BookOpen },
-  { label: 'Receipt Search', to: '/receipts/search', icon: Receipt },
-  { label: 'Manage Users', to: '/admin/users', icon: Shield },
-];
+function KpiCard({ label, value, subtext, icon: Icon, iconBg, iconColor }: KpiCardProps): ReactElement {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm transition hover:shadow-md">
+      <div className={`mb-3 flex h-12 w-12 items-center justify-center rounded-2xl ${iconBg} ${iconColor}`}>
+        <Icon size={24} />
+      </div>
+      <p className="text-sm font-medium text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-bold text-slate-800">{value}</p>
+      {subtext && (
+        <p className="mt-1 text-xs font-semibold text-slate-400">{subtext}</p>
+      )}
+    </div>
+  );
+}
 
 export default function Dashboard(): ReactElement {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'SUPER_ADMIN';
-  const stats = isAdmin ? adminStats : volunteerStats;
-  const visibleActions = quickActions.filter(
-    (a) => a.to !== '/admin/users' || isAdmin
-  );
+  const [stats, setStats] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const loadStats = useCallback(async (): Promise<void> => {
+    try {
+      setError('');
+      const data = await fetchDashboardStats();
+      setStats(data);
+      setLastUpdated(new Date());
+    } catch {
+      setError('Unable to load dashboard stats. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStats();
+    const interval = setInterval(() => {
+      void loadStats();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [loadStats]);
+
+  const overview = stats?.overview;
+
+  const collectionRate = useMemo((): number => {
+    if (!overview || overview.totalAllocatedBooks === 0) return 0;
+    const returned = overview.totalSubmittedBooks + overview.totalPartiallySubmittedBooks;
+    return Math.round((returned / overview.totalAllocatedBooks) * 100);
+  }, [overview]);
+
+  const distributionRate = useMemo((): number => {
+    if (!stats || stats.prasadSummary.totalEligibleBoxes === 0) return 0;
+    return Math.round(
+      (stats.prasadSummary.totalDistributedBoxes / stats.prasadSummary.totalEligibleBoxes) * 100
+    );
+  }, [stats]);
+
+  const monthlyTrend = stats?.charts?.monthlyTrend ?? [];
+  const maxTrendAmount = useMemo((): number => {
+    if (monthlyTrend.length === 0) return 1;
+    return Math.max(...monthlyTrend.map((m) => m.amount), 1);
+  }, [monthlyTrend]);
+
+  const quickNav = [
+    { label: 'Register Sevak', to: '/sevaks/register', icon: UserPlus, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Allocate Books', to: '/books/allocate', icon: BookOpen, color: 'bg-blue-50 text-blue-600' },
+    { label: 'Book Collection', to: '/receipts/entry', icon: Receipt, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Prasad Counter', to: '/prasad', icon: Package, color: 'bg-purple-50 text-purple-600' },
+  ];
+
+  const kpiCards: KpiCardProps[] = [
+    {
+      label: 'કુલ નોંധાયેલ સેવકો / Enrolled Sevaks',
+      value: loading ? '---' : String(overview?.totalSevaks ?? 0),
+      icon: Users,
+      iconBg: 'bg-emerald-50',
+      iconColor: 'text-emerald-500',
+    },
+    {
+      label: 'કુલ ફાળવેલ બુક / Allocated Books',
+      value: loading ? '---' : String(overview?.totalAllocatedBooks ?? 0),
+      subtext: loading ? '' : `${overview?.pendingBooks ?? 0} pending return`,
+      icon: BookOpen,
+      iconBg: 'bg-blue-50',
+      iconColor: 'text-blue-500',
+    },
+    {
+      label: 'પરત જમા થયેલ બુક / Submitted Books',
+      value: loading ? '---' : String(overview?.totalSubmittedBooks ?? 0),
+      subtext: loading ? '' : `+ ${overview?.totalPartiallySubmittedBooks ?? 0} partial`,
+      icon: CheckCircle2,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-500',
+    },
+    {
+      label: 'કુલ જમા થયેલ સેવા રકમ / Total Seva Amount',
+      value: loading ? '---' : formatINR(overview?.totalSubmittedAmount ?? 0),
+      subtext: loading ? '' : `${overview?.totalReceiptsCount ?? 0} total receipts`,
+      icon: IndianRupee,
+      iconBg: 'bg-teal-50',
+      iconColor: 'text-teal-500',
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -73,85 +144,85 @@ export default function Dashboard(): ReactElement {
               <h2 className="text-lg font-bold text-slate-800 sm:text-xl">
                 Welcome back! {user?.fullName ?? user?.email}
               </h2>
-              <p className="text-sm text-slate-500">Check your reports and manage your seva work.</p>
+              <p className="text-sm text-slate-500">Live executive analytics for the Jamo Ne Jamadu Seva Portal.</p>
             </div>
           </div>
-          <div className="hidden sm:block">
-            <img
-              src="https://img.freepik.com/free-vector/business-analytics-concept-illustration_114360-1398.jpg?w=300"
-              alt="Dashboard illustration"
-              className="h-28 w-auto rounded-2xl object-cover opacity-90"
-            />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            {lastUpdated && (
+              <p className="text-xs text-slate-500">
+                Last updated: {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void loadStats()}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Refresh Stats
+            </button>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={stat.label}
-              className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm transition hover:shadow-md"
-            >
-              <div
-                className={`mb-3 flex h-12 w-12 items-center justify-center rounded-2xl ${stat.iconBg} ${stat.iconColor}`}
-              >
-                <Icon size={24} />
-              </div>
-              <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-              <p className="mt-1 text-xl font-bold text-slate-800">{stat.value}</p>
-              {stat.trend && (
-                <p className={`mt-1 text-sm font-semibold ${stat.trend.startsWith('+') ? 'text-emerald-500' : stat.iconColor}`}>
-                  {stat.trend}
-                </p>
-              )}
-            </div>
-          );
-        })}
+      {error && (
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {kpiCards.map((card) => (
+          <KpiCard key={card.label} {...card} />
+        ))}
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6 lg:col-span-2">
           <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-lg font-bold text-slate-800">Revenue updates</h3>
-              <p className="text-sm text-slate-500">Overview of seva progress</p>
+              <h3 className="text-lg font-bold text-slate-800">Seva Collection Trend</h3>
+              <p className="text-sm text-slate-500">Monthly receipt overview</p>
             </div>
-            <select
-              defaultValue="2025"
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-200"
-            >
-              <option value="2025">Year 2025</option>
-              <option value="2024">Year 2024</option>
-              <option value="2023">Year 2023</option>
-            </select>
           </div>
 
           <div className="h-48 sm:h-56">
-            <div className="flex h-full items-end justify-between gap-1 sm:gap-2">
-              {revenueData.map((bar) => (
-                <div key={bar.month} className="group flex flex-1 flex-col items-center gap-2">
-                  <div className="relative w-full max-w-7 flex-1 overflow-hidden rounded-t-xl bg-blue-100" style={{ height: `${bar.value}%` }}>
-                    <div
-                      className="absolute bottom-0 w-full rounded-t-xl bg-linear-to-t from-blue-600 to-blue-400"
-                      style={{ height: `${(bar.primary / bar.value) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-slate-400 sm:text-xs">{bar.month}</span>
-                </div>
-              ))}
-            </div>
+            {monthlyTrend.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                No receipt data available yet.
+              </div>
+            ) : (
+              <div className="flex h-full items-end justify-between gap-1 sm:gap-2">
+                {monthlyTrend.map((bar) => {
+                  const value = Math.round((bar.amount / maxTrendAmount) * 100);
+                  const primary = Math.round(value * 0.7);
+                  return (
+                    <div key={bar.label} className="group flex flex-1 flex-col items-center gap-2">
+                      <div className="relative w-full max-w-7 flex-1 overflow-hidden rounded-t-xl bg-blue-100" style={{ height: `${value}%` }}>
+                        <div
+                          className="absolute bottom-0 w-full rounded-t-xl bg-linear-to-t from-blue-600 to-blue-400"
+                          style={{ height: `${primary}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 sm:text-xs">{bar.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </section>
 
         <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
-          <h3 className="text-lg font-bold text-slate-800">Yearly Breakup</h3>
-          <p className="text-sm text-slate-500">Total outreach</p>
-          <p className="mt-3 text-2xl font-bold text-slate-800">₹36,358</p>
+          <h3 className="text-lg font-bold text-slate-800">Summary Progress</h3>
+          <p className="text-sm text-slate-500">Book & prasad collection rates</p>
+          <p className="mt-3 text-2xl font-bold text-slate-800">
+            {loading ? '---' : formatINR(overview?.totalSubmittedAmount ?? 0)}
+          </p>
           <p className="mt-1 flex items-center gap-1 text-sm text-emerald-500">
             <TrendingUp size={16} />
-            +9% last year
+            {collectionRate}% books collected
           </p>
 
           <div className="relative mx-auto mt-6 h-40 w-40">
@@ -167,16 +238,16 @@ export default function Dashboard(): ReactElement {
                 fill="none"
                 stroke="#3b82f6"
                 strokeWidth="4"
-                strokeDasharray="70, 100"
+                strokeDasharray={`${collectionRate}, 100`}
                 strokeLinecap="round"
               />
               <path
                 d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 fill="none"
-                stroke="#93c5fd"
+                stroke="#10b981"
                 strokeWidth="4"
-                strokeDasharray="30, 100"
-                strokeDashoffset="-70"
+                strokeDasharray={`${distributionRate}, 100`}
+                strokeDashoffset={`-${collectionRate}`}
                 strokeLinecap="round"
               />
             </svg>
@@ -189,37 +260,54 @@ export default function Dashboard(): ReactElement {
             <div className="flex items-center justify-between text-sm">
               <span className="flex items-center gap-2 text-slate-600">
                 <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                2023
+                Book Collection
               </span>
-              <span className="font-semibold text-slate-700">70%</span>
+              <span className="font-semibold text-slate-700">{collectionRate}%</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="flex items-center gap-2 text-slate-600">
-                <span className="h-2.5 w-2.5 rounded-full bg-blue-300" />
-                2024
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                Prasad Distribution
               </span>
-              <span className="font-semibold text-slate-700">30%</span>
+              <span className="font-semibold text-slate-700">{distributionRate}%</span>
             </div>
           </div>
+
+          {stats && stats.recentActivity.length > 0 && (
+            <div className="mt-6 border-t border-slate-100 pt-4">
+              <h4 className="text-sm font-semibold text-slate-700">Recent Activity</h4>
+              <ul className="mt-2 space-y-2">
+                {stats.recentActivity.slice(0, 4).map((item, index) => (
+                  <li key={index} className="text-xs text-slate-500">
+                    <span className="font-medium text-slate-700">{item.description}</span>
+                    {item.sevak && <span className="block text-slate-400">by {item.sevak}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       </div>
 
       <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
-        <h3 className="text-lg font-bold text-slate-800">Quick Actions</h3>
-        <p className="text-sm text-slate-500">Jump to common tasks</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {visibleActions.map((action) => {
+        <h3 className="text-lg font-bold text-slate-800">Quick Navigation</h3>
+        <p className="text-sm text-slate-500">Common operator workflows</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {quickNav.map((action) => {
             const Icon = action.icon;
             return (
               <Link
                 key={action.to}
                 to={action.to}
-                className="group flex items-center gap-4 rounded-2xl border border-slate-200 p-4 transition hover:border-blue-300 hover:shadow-md"
+                className="group flex items-center justify-between rounded-2xl border border-slate-200 p-4 transition hover:border-blue-300 hover:shadow-md"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-100">
-                  <Icon size={20} />
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${action.color}`}>
+                    <Icon size={20} />
+                  </div>
+                  <span className="font-semibold text-slate-800">{action.label}</span>
                 </div>
-                <span className="font-semibold text-slate-800">{action.label}</span>
+                <ArrowRight size={16} className="text-slate-300 group-hover:text-blue-500" />
               </Link>
             );
           })}
