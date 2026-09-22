@@ -13,6 +13,7 @@ import {
   Search as SearchIcon,
   BookOpen,
   Receipt,
+  HandHeart,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -30,6 +31,7 @@ const navItems: NavItem[] = [
   { label: 'Book Allocation', to: '/books/allocate', icon: BookOpen, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Book Collection', to: '/receipts/entry', icon: BookOpen, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Receipt Search', to: '/receipts/search', icon: Receipt, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
+  { label: 'Prasad Counter', to: '/prasad', icon: HandHeart, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Admin Users', to: '/admin/users', icon: Shield, allowedRoles: ['SUPER_ADMIN'] },
 ];
 
