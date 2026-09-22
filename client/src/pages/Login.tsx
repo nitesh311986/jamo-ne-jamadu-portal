@@ -53,7 +53,7 @@ export default function Login(): ReactElement {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
-              placeholder="admin@anandbaps.org"
+              placeholder="sevak@anandbaps.org"
             />
           </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileDown, Loader2, Receipt as ReceiptIcon, Search } from 'lucide-react';
 import api from '../api/axios';
@@ -11,12 +11,13 @@ import type { AxiosError } from 'axios';
 const ALLOWED_LIMITS = [10, 20, 50];
 
 export default function ReceiptSearch(): ReactElement {
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [bookNumber, setBookNumber] = useState<string>('');
   const [receiptNo, setReceiptNo] = useState<string>('');
   const [donorName, setDonorName] = useState<string>('');
   const [donorMobile, setDonorMobile] = useState<string>('');
-
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [sevakCode, setSevakCode] = useState<string>(searchParams.get('sevakCode') ?? '');
 
   const parsePageFromUrl = (value: string | null): number => {
     const parsed = parseInt(value ?? '1', 10);
@@ -40,17 +41,23 @@ export default function ReceiptSearch(): ReactElement {
   const [debouncedReceipt, setDebouncedReceipt] = useState<string>('');
   const [debouncedName, setDebouncedName] = useState<string>('');
   const [debouncedMobile, setDebouncedMobile] = useState<string>('');
+  const [debouncedSevak, setDebouncedSevak] = useState<string>('');
+
+  const isInitialFilter = useRef(true);
 
   useEffect(() => {
+    const isFirst = isInitialFilter.current;
+    isInitialFilter.current = false;
     const timer = setTimeout(() => {
       setDebouncedBook(bookNumber.trim());
       setDebouncedReceipt(receiptNo.trim());
       setDebouncedName(donorName.trim());
       setDebouncedMobile(donorMobile.trim());
-      setPage(1);
+      setDebouncedSevak(sevakCode.trim());
+      if (!isFirst) setPage(1);
     }, 300);
     return () => clearTimeout(timer);
-  }, [bookNumber, receiptNo, donorName, donorMobile]);
+  }, [bookNumber, receiptNo, donorName, donorMobile, sevakCode]);
 
   useEffect(() => {
     async function load(): Promise<void> {
@@ -62,6 +69,7 @@ export default function ReceiptSearch(): ReactElement {
         if (debouncedReceipt) params.receiptNo = debouncedReceipt;
         if (debouncedName) params.donorName = debouncedName;
         if (debouncedMobile) params.donorMobile = debouncedMobile;
+        if (debouncedSevak) params.sevakCode = debouncedSevak;
 
         const { data } = await api.get<ReceiptSearchResponse>('/api/v1/receipts/search', {
           params,
@@ -77,7 +85,7 @@ export default function ReceiptSearch(): ReactElement {
       }
     }
     void load();
-  }, [debouncedBook, debouncedReceipt, debouncedName, debouncedMobile, page, pageSize]);
+  }, [debouncedBook, debouncedReceipt, debouncedName, debouncedMobile, debouncedSevak, page, pageSize]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -85,6 +93,7 @@ export default function ReceiptSearch(): ReactElement {
     if (debouncedReceipt) params.set('receiptNo', debouncedReceipt);
     if (debouncedName) params.set('donorName', debouncedName);
     if (debouncedMobile) params.set('donorMobile', debouncedMobile);
+    if (debouncedSevak) params.set('sevakCode', debouncedSevak);
     params.set('page', String(page));
     params.set('limit', String(pageSize));
     setSearchParams(params, { replace: true });
@@ -93,6 +102,7 @@ export default function ReceiptSearch(): ReactElement {
     debouncedReceipt,
     debouncedName,
     debouncedMobile,
+    debouncedSevak,
     page,
     pageSize,
     setSearchParams,
@@ -164,7 +174,7 @@ export default function ReceiptSearch(): ReactElement {
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
@@ -205,6 +215,16 @@ export default function ReceiptSearch(): ReactElement {
             className={`${inputClass} pl-9`}
           />
         </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            value={sevakCode}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setSevakCode(e.target.value.toUpperCase())}
+            placeholder="Sevak Code (e.g. PS3803)"
+            className={`${inputClass} pl-9 uppercase`}
+          />
+        </div>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
@@ -239,8 +259,16 @@ export default function ReceiptSearch(): ReactElement {
                     <td className="px-4 py-3">{receipt.donorName}</td>
                     <td className="px-4 py-3">{receipt.donorMobile ?? '-'}</td>
                     <td className="px-4 py-3 font-semibold">{formatINR(receipt.amount)}</td>
-                    <td className="px-4 py-3 font-semibold text-orange-700">
-                      {receipt.sevak?.sevakCode ?? '-'}
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (receipt.sevak?.sevakCode) setSevakCode(receipt.sevak.sevakCode);
+                        }}
+                        className="font-semibold text-orange-600 hover:text-orange-700 hover:underline"
+                      >
+                        {receipt.sevak?.sevakCode ?? '-'}
+                      </button>
                     </td>
                   </tr>
                 ))}

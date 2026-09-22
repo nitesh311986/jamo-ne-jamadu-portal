@@ -7,17 +7,23 @@ This module implements the **Aksharmrut Sevak - Jamo Ne Jamadu Re** (Form 01) fl
 ### `generateSevakCode(firstName, lastName)`
 
 **Algorithm**
-1. Take the first character of `firstName` and `lastName`, upper-cased (`getInitials`).
-2. Append a 4-digit, zero-padded random number (`0000`–`9999`).
-3. Validate uniqueness against the `Sevak.sevakCode` column via `prisma.sevak.count`.
-4. If the code exists, retry up to 20 times before throwing an error.
+1. Take the first letter of `firstName` and `lastName` and convert them to lower-case.
+2. If either name is empty, use `x` as the missing initial.
+3. Use the year `2026` as the numeric anchor.
+4. Base prefix = `${firstInitial}${lastInitial}2026` (e.g. `nb2026`).
+5. Query existing Sevaks whose `sevakCode` starts with this prefix (`prisma.sevak.findMany`).
+6. Extract the numeric suffix from each matching code, determine the maximum, and increment by 1.
+7. Suffix is zero-padded to a minimum of 2 digits (`01`, `02`, `10`, `100`, ...).
+8. Final code = `${basePrefix}${suffix}` (e.g. `nb202601`).
 
 **Format examples**
-- `Pankaj Joshi` → `PJ4892`
-- `Mina Patel` → `MP0023`
+- `Nisarg Bhatt` → `nb202601` (first=`n`, last=`b`)
+- `Mina Patel` → `mp202601` (first=`m`, last=`p`)
+- `A B` → `ab202601` (first=`a`, last=`b`)
+- `A` → `aa202601` (one-word name: first and last initial from the same word)
 
 **Collision handling**
-The 4-digit random component yields 10,000 possibilities per initial pair. The retry loop makes collisions statistically negligible for expected data volumes. If all attempts collide, the API returns `500` with a logged error.
+The year-and-sequence format guarantees a unique next suffix for every matching prefix. No random retries are required.
 
 ### Endpoints
 
@@ -37,6 +43,9 @@ All endpoints require a valid JWT (`authenticateToken`).
 **Validation**
 - `expectedContacts` must be a non-negative integer.
 - `mobile` must contain at least 10 digits; `altMobile` and `whatsapp` are validated the same way when provided.
+- `mobile` is strictly unique. If it already belongs to another sevak, the API returns `409 Conflict: "Mobile number [mobile] is already registered with another Sevak"`.
+- `whatsapp`, when provided, is strictly unique. If it already belongs to another sevak, the API returns `409 Conflict: "WhatsApp number [whatsapp] is already registered with another Sevak"`.
+- `altMobile` may duplicate existing values; it is not uniqueness-checked.
 - A unique `sevakCode` is generated server-side; clients must not supply it.
 
 ### GET `/api/v1/sevaks/search`
@@ -101,10 +110,10 @@ The list view calls `GET /api/v1/sevaks/export/excel` with `responseType: 'blob'
 
 | Scenario | Expected |
 |----------|----------|
-| `firstName="Pankaj"`, `lastName="Joshi"` | Code starts with `PJ` followed by 4 digits |
-| Existing `PJ1234` in DB | New `P J...` sevak receives a different code (retry) |
-| 20 consecutive collisions | `500 Internal server error` (extremely unlikely) |
-| Lowercase input | Initials upper-cased in code |
+| `firstName="Nisarg"`, `lastName="Bhatt"` | `nb202601` (or the next available 2+ digit sequence) |
+| Existing `nb202601` in DB | Next `nb202602` |
+| `firstName="A"`, `lastName="B"` | `ab202601` |
+| Lowercase input | Lower-case initials in code |
 | One-word name | First and last initial from the same word |
 
 ### POST `/api/v1/sevaks`
@@ -115,6 +124,8 @@ The list view calls `GET /api/v1/sevaks/export/excel` with `responseType: 'blob'
 | Missing `fullName` | `400 Required fields are missing` |
 | `expectedContacts = -1` | `400 expectedContacts must be a non-negative integer` |
 | `mobile = "123"` | `400 Mobile number must contain at least 10 digits` |
+| `mobile` already registered | `409 Mobile number [mobile] is already registered with another Sevak` |
+| `whatsapp` already registered | `409 WhatsApp number [whatsapp] is already registered with another Sevak` |
 
 ### Search
 

@@ -26,9 +26,9 @@ async function main(): Promise<void> {
   });
 
   const volunteer = await prisma.user.upsert({
-    where: { email: 'volunteer@anandbaps.org' },
+    where: { email: 'sevak@anandbaps.org' },
     create: {
-      email: 'volunteer@anandbaps.org',
+      email: 'sevak@anandbaps.org',
       passwordHash: volunteerPassword,
       fullName: 'Mandir Desk Volunteer',
       phoneNumber: '9879563095',

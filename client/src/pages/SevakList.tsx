@@ -87,6 +87,10 @@ export default function SevakList(): ReactElement {
     expectedContacts: '',
   });
   const [editError, setEditError] = useState<string>('');
+  const [fieldErrors, setFieldErrors] = useState<{ mobile: string; whatsapp: string }>({
+    mobile: '',
+    whatsapp: '',
+  });
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -175,7 +179,7 @@ export default function SevakList(): ReactElement {
   };
 
   const openEdit = (sevak: Sevak): void => {
-    openEdit(sevak);
+    setEditingSevak(sevak);
     setEditForm(sevakToFormState(sevak));
     setEditError('');
   };
@@ -185,6 +189,7 @@ export default function SevakList(): ReactElement {
     if (!editingSevak) return;
 
     setEditError('');
+    setFieldErrors({ mobile: '', whatsapp: '' });
     setIsSavingEdit(true);
 
     const expected = parseInt(editForm.expectedContacts, 10);
@@ -212,9 +217,21 @@ export default function SevakList(): ReactElement {
       setSevaks(response.data.sevaks);
       setTotal(response.data.total);
     } catch (err) {
-      const message =
-        (err as AxiosError<ApiError>).response?.data?.error ?? 'Failed to update sevak';
-      setEditError(message);
+      const axiosErr = err as AxiosError<ApiError>;
+      const status = axiosErr.response?.status;
+      const message = axiosErr.response?.data?.error ?? 'Failed to update sevak';
+      if (status === 409) {
+        const lower = message.toLowerCase();
+        if (lower.includes('mobile number')) {
+          setFieldErrors({ mobile: message, whatsapp: '' });
+        } else if (lower.includes('whatsapp number')) {
+          setFieldErrors({ mobile: '', whatsapp: message });
+        } else {
+          setEditError(message);
+        }
+      } else {
+        setEditError(message);
+      }
     } finally {
       setIsSavingEdit(false);
     }
@@ -515,6 +532,9 @@ export default function SevakList(): ReactElement {
                     required
                     className={inputClass}
                   />
+                  {fieldErrors.mobile && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.mobile}</p>
+                  )}
                 </div>
 
                 <div>
@@ -539,6 +559,9 @@ export default function SevakList(): ReactElement {
                     onChange={(e) => handleEditChange('whatsapp', e.target.value)}
                     className={inputClass}
                   />
+                  {fieldErrors.whatsapp && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.whatsapp}</p>
+                  )}
                 </div>
 
                 <div>

@@ -46,13 +46,13 @@ model AuditLog {
 
 model Sevak {
   id                String               @id @default(uuid())
-  sevakCode         String               @unique // Format: e.g. PJ4892
+  sevakCode         String               @unique // Format: e.g. nb202601, nb202602
   fullName          String               // પૂરું નામ
   firstName         String
   lastName          String
-  mobile            String               // મોબાઇલ
-  altMobile         String?              // અન્ય મોબાઇલ નંબર
-  whatsapp          String?              // WhatsApp નંબર
+  mobile            String               @unique // Strict: Duplicate mobile blocked
+  altMobile         String?              // Alternate mobile: Duplicate allowed
+  whatsapp          String?              @unique // Strict: Duplicate WhatsApp blocked
   address           String               // પૂરું સરનામું
   mandal            String               // મંડળ
   kshetra           String               // ક્ષેત્ર
@@ -64,6 +64,7 @@ model Sevak {
   distributions     PrasadDistribution[]
 
   @@index([mobile])
+  @@index([whatsapp])
   @@index([fullName])
   @@index([sevakCode])
   @@index([createdAt(sort: Desc)])
