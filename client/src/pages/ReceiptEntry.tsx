@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -18,6 +19,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import api from '../api/axios';
+import PaginationControls from '../components/common/PaginationControls';
 import { formatINR } from '../utils/currency';
 import type { Sevak, SevakSearchResponse } from '../types/sevak';
 import type { BookAllocation } from '../types/book';
@@ -27,6 +29,7 @@ import type {
   ReceiptUpdateItem,
   NewReceiptItem,
   BulkSyncResponse,
+  ReceiptSummaryResponse,
 } from '../types/receipt';
 import type { ApiError } from '../types/auth';
 import type { AxiosError } from 'axios';
@@ -68,6 +71,10 @@ export default function ReceiptEntry(): ReactElement {
   const [selectedSevak, setSelectedSevak] = useState<Sevak | null>(null);
   const [books, setBooks] = useState<BookAllocation[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [receiptTotal, setReceiptTotal] = useState<number>(0);
+  const [receiptPage, setReceiptPage] = useState<number>(1);
+  const [receiptPageSize, setReceiptPageSize] = useState<number>(10);
+  const [savedSummary, setSavedSummary] = useState<ReceiptSummaryResponse | null>(null);
   const [edits, setEdits] = useState<Record<string, ReceiptInput>>({});
   const [drafts, setDrafts] = useState<ReceiptInput[]>([{ ...initialRow }]);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -106,27 +113,63 @@ export default function ReceiptEntry(): ReactElement {
     firstInput?.focus();
   }, [drafts.length]);
 
+  const loadBooks = useCallback(async (sevakId: string): Promise<void> => {
+    try {
+      const { data } = await api.get<{
+        books: BookAllocation[];
+        total: number;
+        page: number;
+        limit: number;
+      }>(`/api/v1/books/sevak/${sevakId}`, {
+        params: { page: 1, limit: 50 },
+      });
+      setBooks(data.books);
+    } catch {
+      setError('Failed to load assigned books');
+    }
+  }, []);
+
+  const loadReceipts = useCallback(async (sevakId: string): Promise<void> => {
+    try {
+      const { data } = await api.get<{
+        sevak: { id: string; sevakCode: string; fullName: string; mandal: string };
+        receipts: Receipt[];
+        total: number;
+        page: number;
+        limit: number;
+        summary: ReceiptSummaryResponse;
+      }>(`/api/v1/receipts/sevak/${sevakId}`, {
+        params: { page: receiptPage, limit: receiptPageSize },
+      });
+      setReceipts(data.receipts);
+      setReceiptTotal(data.total);
+      setReceiptPage(data.page);
+      setSavedSummary(data.summary);
+    } catch {
+      setError('Failed to load receipts');
+    }
+  }, [receiptPage, receiptPageSize]);
+
+  useEffect(() => {
+    if (selectedSevak) {
+      void loadBooks(selectedSevak.id);
+      void loadReceipts(selectedSevak.id);
+    }
+  }, [selectedSevak, loadBooks, loadReceipts]);
+
   const selectSevak = async (sevak: Sevak): Promise<void> => {
     setSelectedSevak(sevak);
     setSevakQuery('');
     setSevakResults([]);
     setShowDropdown(false);
     setReceipts([]);
+    setReceiptTotal(0);
+    setReceiptPage(1);
+    setSavedSummary(null);
     setEdits({});
     setDrafts([{ ...initialRow }]);
     setError('');
     setSuccess('');
-
-    try {
-      const [receiptsRes, booksRes] = await Promise.all([
-        api.get<{ receipts: Receipt[] }>(`/api/v1/receipts/sevak/${sevak.id}`),
-        api.get<{ books: BookAllocation[] }>(`/api/v1/books/sevak/${sevak.id}`),
-      ]);
-      setReceipts(receiptsRes.data.receipts);
-      setBooks(booksRes.data.books);
-    } catch {
-      setError('Failed to load sevak details');
-    }
   };
 
   const getExistingDisplay = (receipt: Receipt): ReceiptInput => {
@@ -200,18 +243,18 @@ export default function ReceiptEntry(): ReactElement {
     return dupes;
   }, [allKeyedRows]);
 
-  const liveRows = useMemo(() => {
-    const existing = receipts.map((r) => getExistingDisplay(r));
-    return [...existing, ...drafts];
-  }, [receipts, edits, drafts]);
-
   const liveSummary = useMemo(() => {
     const groups: Record<string, { amount: number; count: number; subTotal: number }> = {};
-    let grandTotal = 0;
-    let totalCount = 0;
-    const validBooks = new Set<string>();
 
-    for (const row of liveRows) {
+    if (savedSummary) {
+      for (const group of savedSummary.groups) {
+        const key = group.amount.toFixed(2);
+        groups[key] = { ...group };
+      }
+    }
+
+    const draftBooks = new Set<string>();
+    for (const row of drafts) {
       const amount = Number(row.amount);
       if (!amount || Number.isNaN(amount) || amount <= 0) continue;
       const key = amount.toFixed(2);
@@ -220,20 +263,22 @@ export default function ReceiptEntry(): ReactElement {
       }
       groups[key].count += 1;
       groups[key].subTotal += amount;
-      grandTotal += amount;
-      totalCount += 1;
       if (row.bookNumber.trim()) {
-        validBooks.add(row.bookNumber.trim());
+        draftBooks.add(row.bookNumber.trim());
       }
     }
 
+    const groupList = Object.values(groups).sort((a, b) => a.amount - b.amount);
+    const grandTotal = groupList.reduce((sum, g) => sum + g.subTotal, 0);
+    const totalCount = groupList.reduce((sum, g) => sum + g.count, 0);
+
     return {
-      groups: Object.values(groups).sort((a, b) => a.amount - b.amount),
+      groups: groupList,
       grandTotal,
       totalCount,
-      uniqueBooks: validBooks.size,
+      uniqueBooks: (savedSummary?.uniqueBooks ?? 0) + draftBooks.size,
     };
-  }, [liveRows]);
+  }, [savedSummary, drafts]);
 
   const updateExisting = (
     receipt: Receipt,
@@ -335,10 +380,7 @@ export default function ReceiptEntry(): ReactElement {
         return next;
       });
       if (selectedSevak) {
-        const { data } = await api.get<{ receipts: Receipt[] }>(
-          `/api/v1/receipts/sevak/${selectedSevak.id}`
-        );
-        setReceipts(data.receipts);
+        await loadReceipts(selectedSevak.id);
       }
     } catch (err) {
       setError(
@@ -356,10 +398,7 @@ export default function ReceiptEntry(): ReactElement {
       await api.delete(`/api/v1/receipts/${receipt.id}`);
       setSuccess('Receipt deleted');
       if (selectedSevak) {
-        const { data } = await api.get<{ receipts: Receipt[] }>(
-          `/api/v1/receipts/sevak/${selectedSevak.id}`
-        );
-        setReceipts(data.receipts);
+        await loadReceipts(selectedSevak.id);
       }
     } catch (err) {
       setError(
@@ -442,15 +481,7 @@ export default function ReceiptEntry(): ReactElement {
         additions,
       });
 
-      setReceipts(data.receipts);
-      setBooks((prev) =>
-        prev.map((b) => {
-          const matched = data.receipts.find((r) => r.bookNumber === b.bookNumber);
-          return matched?.book
-            ? { ...b, status: matched.book.status }
-            : b;
-        })
-      );
+      setReceiptPage(1);
       setEdits({});
       setDrafts([{ ...initialRow }]);
       setSuccess(
@@ -825,6 +856,21 @@ export default function ReceiptEntry(): ReactElement {
             </tbody>
           </table>
         </div>
+
+        {receiptTotal > 0 && (
+          <PaginationControls
+            currentPage={receiptPage}
+            totalPages={Math.max(1, Math.ceil(receiptTotal / receiptPageSize))}
+            totalCount={receiptTotal}
+            pageSize={receiptPageSize}
+            onPageChange={setReceiptPage}
+            onPageSizeChange={(newSize) => {
+              setReceiptPageSize(newSize);
+              setReceiptPage(1);
+            }}
+            isLoading={isSaving}
+          />
+        )}
 
         <div className="flex items-center gap-2">
           <button

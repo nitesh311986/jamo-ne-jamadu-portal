@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import prisma from '../lib/prisma';
 import { logAuditEvent } from '../utils/audit';
 import logger from '../utils/logger';
+import { parsePaginationParams } from '../utils/pagination';
 
 interface CreateSevakBody {
   fullName: string;
@@ -142,11 +143,7 @@ export async function createSevak(
 
 export async function searchSevaks(req: Request, res: Response): Promise<void> {
   const rawQuery = String(req.query.q ?? '').trim();
-  const rawPage = parseInt(String(req.query.page ?? '1'), 10);
-  const rawLimit = parseInt(String(req.query.limit ?? '20'), 10);
-  const page = Math.max(1, Number.isNaN(rawPage) ? 1 : rawPage);
-  const limit = Math.max(1, Math.min(100, Number.isNaN(rawLimit) ? 20 : rawLimit));
-  const skip = (page - 1) * limit;
+  const { page, limit, skip, take } = parsePaginationParams(req.query);
 
   const where = rawQuery.length > 0
     ? {
@@ -160,14 +157,15 @@ export async function searchSevaks(req: Request, res: Response): Promise<void> {
     : {};
 
   try {
-    const [sevaks, total] = await Promise.all([
+    const [total, sevaks] = await prisma.$transaction([
+      prisma.sevak.count({ where }),
       prisma.sevak.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy: { createdAt: 'desc' },
+        include: { assignedBooks: true },
       }),
-      prisma.sevak.count({ where }),
     ]);
 
     res.status(200).json({

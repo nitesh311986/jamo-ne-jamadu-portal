@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import api from '../api/axios';
+import PaginationControls from '../components/common/PaginationControls';
 import SevakSearchSelect from '../components/SevakSearchSelect';
 import type { Sevak } from '../types/sevak';
 import type { BookAllocation } from '../types/book';
@@ -44,6 +45,9 @@ function normalize(value: string): string {
 export default function BookAllocation(): ReactElement {
   const [selectedSevak, setSelectedSevak] = useState<Sevak | null>(null);
   const [books, setBooks] = useState<BookAllocation[]>([]);
+  const [bookTotal, setBookTotal] = useState<number>(0);
+  const [bookPage, setBookPage] = useState<number>(1);
+  const [bookPageSize, setBookPageSize] = useState<number>(10);
   const [isLoadingBooks, setIsLoadingBooks] = useState<boolean>(false);
 
   const [editingBookId, setEditingBookId] = useState<string | null>(null);
@@ -66,16 +70,23 @@ export default function BookAllocation(): ReactElement {
   const loadBooks = useCallback(async (sevakId: string): Promise<void> => {
     setIsLoadingBooks(true);
     try {
-      const { data } = await api.get<{ books: BookAllocation[] }>(
-        `/api/v1/books/sevak/${sevakId}`
-      );
+      const { data } = await api.get<{
+        books: BookAllocation[];
+        total: number;
+        page: number;
+        limit: number;
+      }>(`/api/v1/books/sevak/${sevakId}`, {
+        params: { page: bookPage, limit: bookPageSize },
+      });
       setBooks(data.books);
+      setBookTotal(data.total);
+      setBookPage(data.page);
     } catch {
       setError('Failed to load assigned books');
     } finally {
       setIsLoadingBooks(false);
     }
-  }, []);
+  }, [bookPage, bookPageSize]);
 
   useEffect(() => {
     if (selectedSevak) {
@@ -83,6 +94,8 @@ export default function BookAllocation(): ReactElement {
       clearMessages();
     } else {
       setBooks([]);
+      setBookTotal(0);
+      setBookPage(1);
     }
   }, [selectedSevak, loadBooks, clearMessages]);
 
@@ -162,7 +175,7 @@ export default function BookAllocation(): ReactElement {
       setSuccess(`${nonEmpty.length} book${nonEmpty.length === 1 ? '' : 's'} allocated`);
       setNewRows([{ id: nextId, value: '' }]);
       setNextId((id) => id + 1);
-      await loadBooks(selectedSevak.id);
+      setBookPage(1);
     } catch (err) {
       const response = (err as AxiosError<ApiError>).response;
       const message =
@@ -500,6 +513,21 @@ export default function BookAllocation(): ReactElement {
                       </tbody>
                     </table>
                   </div>
+
+                  {bookTotal > 0 && (
+                    <PaginationControls
+                      currentPage={bookPage}
+                      totalPages={Math.max(1, Math.ceil(bookTotal / bookPageSize))}
+                      totalCount={bookTotal}
+                      pageSize={bookPageSize}
+                      onPageChange={setBookPage}
+                      onPageSizeChange={(newSize) => {
+                        setBookPageSize(newSize);
+                        setBookPage(1);
+                      }}
+                      isLoading={isLoadingBooks}
+                    />
+                  )}
                 </>
               )}
             </section>
@@ -603,7 +631,7 @@ export default function BookAllocation(): ReactElement {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Assigned Books</span>
-                  <span className="font-medium text-slate-800">{books.length}</span>
+                  <span className="font-medium text-slate-800">{bookTotal}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">New Books</span>

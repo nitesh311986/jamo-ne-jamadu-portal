@@ -3,6 +3,7 @@ import { BookStatus } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { logAuditEvent } from '../utils/audit';
 import logger from '../utils/logger';
+import { parsePaginationParams } from '../utils/pagination';
 
 interface BatchAssignBody {
   sevakId: string;
@@ -29,6 +30,7 @@ export async function getBooksBySevak(
   res: Response
 ): Promise<void> {
   const { sevakId } = req.params;
+  const { page, limit, skip, take } = parsePaginationParams(req.query);
 
   try {
     const sevak = await prisma.sevak.findUnique({ where: { id: sevakId } });
@@ -37,12 +39,18 @@ export async function getBooksBySevak(
       return;
     }
 
-    const books = await prisma.bookAllocation.findMany({
-      where: { sevakId },
-      orderBy: { assignedAt: 'desc' },
-    });
+    const where = { sevakId };
+    const [total, books] = await prisma.$transaction([
+      prisma.bookAllocation.count({ where }),
+      prisma.bookAllocation.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { assignedAt: 'desc' },
+      }),
+    ]);
 
-    res.status(200).json({ books });
+    res.status(200).json({ books, total, page, limit });
   } catch (err) {
     logger.error('Get books by sevak error', { error: err });
     res.status(500).json({ error: 'Internal server error' });
