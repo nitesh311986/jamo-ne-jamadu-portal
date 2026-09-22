@@ -785,6 +785,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /dashboard/stats:
+    get:
+      summary: Get executive analytics dashboard stats
+      operationId: getDashboardStats
+      tags:
+        - Dashboard
+      responses:
+        '200':
+          description: Aggregated dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStatsResponse'
+        '401':
+          description: Authentication required or token invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1597,6 +1623,146 @@ components:
           type: string
         receiptsServed:
           type: integer
+
+    DashboardStatsResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/DashboardStatsData'
+
+    DashboardStatsData:
+      type: object
+      required:
+        - overview
+        - prasadSummary
+        - recentActivity
+      properties:
+        overview:
+          $ref: '#/components/schemas/DashboardOverview'
+        prasadSummary:
+          $ref: '#/components/schemas/DashboardPrasadSummary'
+        recentActivity:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardActivity'
+        charts:
+          $ref: '#/components/schemas/DashboardCharts'
+
+    DashboardOverview:
+      type: object
+      required:
+        - totalSevaks
+        - totalAllocatedBooks
+        - totalSubmittedBooks
+        - totalPartiallySubmittedBooks
+        - pendingBooks
+        - totalSubmittedAmount
+        - totalReceiptsCount
+      properties:
+        totalSevaks:
+          type: integer
+          minimum: 0
+        totalAllocatedBooks:
+          type: integer
+          minimum: 0
+        totalSubmittedBooks:
+          type: integer
+          minimum: 0
+        totalPartiallySubmittedBooks:
+          type: integer
+          minimum: 0
+        pendingBooks:
+          type: integer
+          minimum: 0
+        totalSubmittedAmount:
+          type: number
+          minimum: 0
+        totalReceiptsCount:
+          type: integer
+          minimum: 0
+
+    DashboardPrasadSummary:
+      type: object
+      required:
+        - totalEligibleBoxes
+        - totalDistributedBoxes
+        - balanceBoxes
+      properties:
+        totalEligibleBoxes:
+          type: integer
+          minimum: 0
+        totalDistributedBoxes:
+          type: integer
+          minimum: 0
+        balanceBoxes:
+          type: integer
+          minimum: 0
+
+    DashboardActivity:
+      type: object
+      required:
+        - type
+        - description
+        - timestamp
+      properties:
+        type:
+          type: string
+        description:
+          type: string
+        sevak:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+
+    DashboardCharts:
+      type: object
+      required:
+        - monthlyTrend
+        - denominationBreakdown
+      properties:
+        monthlyTrend:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardChartPoint'
+        denominationBreakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardDenominationPoint'
+
+    DashboardChartPoint:
+      type: object
+      required:
+        - label
+        - count
+        - amount
+      properties:
+        label:
+          type: string
+        count:
+          type: integer
+        amount:
+          type: number
+
+    DashboardDenominationPoint:
+      type: object
+      required:
+        - tier
+        - count
+        - amount
+      properties:
+        tier:
+          type: string
+        count:
+          type: integer
+        amount:
+          type: number
 
     Error:
       type: object

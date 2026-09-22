@@ -368,8 +368,8 @@ export default function PrasadDistribution(): ReactElement {
                           }
                           className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition ${
                             isOver
-                              ? 'border-red-300 bg-red-50 text-red-700 focus:border-red-500'
-                              : 'border-slate-300 focus:border-orange-500 focus:ring-1 focus:ring-orange-500'
+                              ? 'border-red-300 bg-red-50 text-red-700 focus:ring-1 focus:ring-red-500'
+                              : 'border-slate-300 focus:ring-1 focus:ring-orange-500'
                           }`}
                         />
                         <span className="whitespace-nowrap text-xs text-slate-500">boxes</span>
