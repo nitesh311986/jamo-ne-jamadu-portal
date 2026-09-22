@@ -693,6 +693,98 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /prasad/sevak/{sevakId}:
+    get:
+      summary: Get full prasad distribution overview for a sevak
+      operationId: getSevakPrasadOverview
+      tags:
+        - Prasad
+      parameters:
+        - in: path
+          name: sevakId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Distribution overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrasadDistributionOverview'
+        '404':
+          description: Sevak not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /prasad/distribute:
+    post:
+      summary: Record prasad distribution for a sevak
+      operationId: distributePrasad
+      tags:
+        - Prasad
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrasadDistributeRequest'
+      responses:
+        '200':
+          description: Distribution recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrasadDistributeResponse'
+        '400':
+          description: Validation or over-allocation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Receipts already served
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /reports/master-summary/excel:
+    get:
+      summary: Download master summary Excel workbook
+      operationId: exportMasterSummaryExcel
+      tags:
+        - Reports
+      responses:
+        '200':
+          description: Excel file download
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1314,6 +1406,197 @@ components:
             $ref: '#/components/schemas/ReceiptWithBook'
         summary:
           $ref: '#/components/schemas/ReceiptSummaryResponse'
+
+    PrasadTierBreakdown:
+      type: object
+      required:
+        - slabTier
+        - tierLabel
+        - minAmount
+        - maxAmount
+        - totalReceipts
+        - unservedReceipts
+        - eligibleBoxes
+        - distributedBoxes
+        - remainingBoxes
+      properties:
+        slabTier:
+          type: string
+        tierLabel:
+          type: string
+        minAmount:
+          type: number
+        maxAmount:
+          type: number
+          nullable: true
+        totalReceipts:
+          type: integer
+        unservedReceipts:
+          type: integer
+        eligibleBoxes:
+          type: integer
+        distributedBoxes:
+          type: integer
+        remainingBoxes:
+          type: integer
+
+    PrasadDistributionReceipt:
+      type: object
+      required:
+        - id
+        - receiptNo
+        - amount
+        - prasadDistributed
+        - boxesGenerated
+      properties:
+        id:
+          type: string
+          format: uuid
+        receiptNo:
+          type: string
+        donorName:
+          type: string
+          nullable: true
+        amount:
+          type: number
+        prasadDistributed:
+          type: boolean
+        distributedAt:
+          type: string
+          format: date-time
+          nullable: true
+        boxesGenerated:
+          type: integer
+
+    PrasadBookGroup:
+      type: object
+      required:
+        - bookNumber
+        - status
+        - assignedAt
+        - receipts
+      properties:
+        bookNumber:
+          type: string
+        status:
+          type: string
+          enum:
+            - ASSIGNED
+            - SUBMITTED
+            - PARTIALLY_SUBMITTED
+        assignedAt:
+          type: string
+          format: date-time
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrasadDistributionReceipt'
+
+    PrasadDistributionOverview:
+      type: object
+      required:
+        - sevak
+        - books
+        - receipts
+        - tiers
+        - grandTotal
+        - receiptsByBook
+      properties:
+        sevak:
+          $ref: '#/components/schemas/Sevak'
+        books:
+          type: object
+          required:
+            - total
+            - completed
+            - partially
+            - pending
+          properties:
+            total:
+              type: integer
+            completed:
+              type: integer
+            partially:
+              type: integer
+            pending:
+              type: integer
+        receipts:
+          type: object
+          required:
+            - total
+            - served
+            - unserved
+          properties:
+            total:
+              type: integer
+            served:
+              type: integer
+            unserved:
+              type: integer
+        tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrasadTierBreakdown'
+        grandTotal:
+          type: object
+          required:
+            - totalSevaAmount
+            - eligibleBoxes
+            - distributedBoxes
+            - pendingBoxes
+          properties:
+            totalSevaAmount:
+              type: number
+            eligibleBoxes:
+              type: integer
+            distributedBoxes:
+              type: integer
+            pendingBoxes:
+              type: integer
+        receiptsByBook:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrasadBookGroup'
+
+    PrasadDistributeRequest:
+      type: object
+      required:
+        - sevakId
+        - tierDistributions
+        - receiptIdsToMark
+      properties:
+        sevakId:
+          type: string
+          format: uuid
+        tierDistributions:
+          type: array
+          items:
+            type: object
+            required:
+              - slabTier
+              - distributeCount
+            properties:
+              slabTier:
+                type: string
+              distributeCount:
+                type: integer
+                minimum: 0
+        receiptIdsToMark:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    PrasadDistributeResponse:
+      type: object
+      required:
+        - message
+        - receiptsServed
+      properties:
+        message:
+          type: string
+        receiptsServed:
+          type: integer
 
     Error:
       type: object

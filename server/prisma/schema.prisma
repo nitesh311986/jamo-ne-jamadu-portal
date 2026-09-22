@@ -92,9 +92,19 @@ model SevaReceipt {
   entryDate   DateTime @default(now())
   createdAt   DateTime @default(now())
 
+  // --- Prasad Distribution Extensions ---
+  prasadDistributed Boolean   @default(false)
+  boxesAllocated    Int       @default(0)
+  distributedAt     DateTime?
+  distributedBy     String?
+
+
+  @@unique([bookNumber, receiptNo])
+  @@index([receiptNo])
   @@index([bookNumber])
   @@index([donorName])
-  @@index([sevakId])
+  @@index([sevakId]) 
+  @@index([prasadDistributed])
 }
 
 model PrasadDistribution {
@@ -104,6 +114,8 @@ model PrasadDistribution {
   slabTier         String   // e.g., '<500', '500-999', '1000-1999', etc.
   eligibleBoxes    Int      @default(0)
   distributedBoxes Int      @default(0)
+  totalReceiptsCount   Int      @default(0)
+  servedReceiptsCount  Int      @default(0)
   updatedAt        DateTime @updatedAt
 
   @@unique([sevakId, slabTier])
