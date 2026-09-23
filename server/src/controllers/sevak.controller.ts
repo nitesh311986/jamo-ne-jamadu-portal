@@ -427,3 +427,99 @@ export async function deleteSevak(
     res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export async function exportSevakBooksSummary(_req: Request, res: Response): Promise<void> {
+  try {
+    const sevaks = await prisma.sevak.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { assignedBooks: true },
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Sevak Book Allocations');
+
+    worksheet.columns = [
+      { header: 'Sevak Code', key: 'sevakCode', width: 18 },
+      { header: 'Full Name (પૂરું નામ)', key: 'fullName', width: 30 },
+      { header: 'Mobile (મોબાઇલ)', key: 'mobile', width: 18 },
+      { header: 'Mandal (મંડળ)', key: 'mandal', width: 22 },
+      { header: 'Kshetra (ક્ષેત્ર)', key: 'kshetra', width: 22 },
+      { header: 'Assigned Books Count (કુલ ફાળવેલ બુક)', key: 'assignedBooksCount', width: 28 },
+      { header: 'Allocated Book Numbers', key: 'allocatedBookNumbers', width: 28 },
+      { header: 'Book Statuses', key: 'bookStatuses', width: 40 },
+      { header: 'Target Contacts', key: 'expectedContacts', width: 20 },
+    ];
+
+    const saffronFill: Partial<ExcelJS.Fill> = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF9933' },
+    };
+    const navyFont: Partial<ExcelJS.Font> = { bold: true, color: { argb: '000080' } };
+
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.fill = saffronFill as ExcelJS.Fill;
+      cell.font = navyFont as ExcelJS.Font;
+      cell.alignment = { horizontal: 'center' };
+    });
+
+    const rows = sevaks.map((sevak) => {
+      const bookNumbers = sevak.assignedBooks
+        .map((b) => b.bookNumber)
+        .sort((a, b) => a.localeCompare(b));
+      const bookStatuses = sevak.assignedBooks
+        .map((b) => `${b.bookNumber} (${b.status})`)
+        .sort((a, b) => a.localeCompare(b));
+
+      return {
+        sevakCode: sevak.sevakCode,
+        fullName: sevak.fullName,
+        mobile: sevak.mobile,
+        mandal: sevak.mandal,
+        kshetra: sevak.kshetra,
+        assignedBooksCount: sevak.assignedBooks.length,
+        allocatedBookNumbers: bookNumbers.join(', '),
+        bookStatuses: bookStatuses.join(', '),
+        expectedContacts: sevak.expectedContacts,
+      };
+    });
+
+    worksheet.addRows(rows);
+
+    for (const column of worksheet.columns) {
+      if (!column) continue;
+      let maxLength = 0;
+      const rawHeader = column.header;
+      const headerText = Array.isArray(rawHeader)
+        ? rawHeader.join(', ')
+        : String(rawHeader ?? '');
+      maxLength = Math.max(maxLength, headerText.length);
+
+      (column as ExcelJS.Column).eachCell(
+        { includeEmpty: false },
+        (cell) => {
+          const cellValue = String(cell.value ?? '');
+          maxLength = Math.max(maxLength, cellValue.length);
+        }
+      );
+
+      column.width = Math.min(maxLength + 4, 60);
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="Sevak_Book_Allocations_2026.xlsx"'
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    logger.error('Export sevak books summary error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}

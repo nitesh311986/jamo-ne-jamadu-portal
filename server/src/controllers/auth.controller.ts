@@ -77,8 +77,14 @@ export async function login(req: Request<Record<string, never>, unknown, LoginBo
 
     await logAuditEvent(user.id, 'USER_LOGIN', { email: user.email, ip: req.ip ?? null });
 
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 12 * 60 * 60 * 1000,
+    });
+
     res.status(200).json({
-      token,
       user: excludePasswordHash(user),
     });
   } catch (err) {
@@ -178,4 +184,9 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
     logger.error('List users error', { error: err });
     res.status(500).json({ error: 'Internal server error' });
   }
+}
+
+export async function logout(_req: Request, res: Response): Promise<void> {
+  res.clearCookie('auth_token');
+  res.status(200).json({ success: true, message: 'Logged out successfully' });
 }

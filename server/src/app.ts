@@ -3,6 +3,11 @@ dotenv.config();
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import hpp from 'hpp';
+import { rateLimit } from 'express-rate-limit';
+
 import authRoutes from './routes/auth.routes';
 import sevakRoutes from './routes/sevak.routes';
 import bookRoutes from './routes/book.routes';
@@ -18,16 +23,38 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:5173',
   process.env.CLIENT_URL,
+  process.env.LIVE_CLIENT_URL,
 ].filter(Boolean) as string[];
 
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Too many requests from this IP. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: {
+    success: false,
+    error: 'Too many login attempts from this IP. Please try again after 15 minutes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(helmet());
+app.use(cookieParser());
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      
-      const isAllowed = allowedOrigins.some((allowed) => origin === allowed) ||
-        origin.endsWith('.vercel.app'); // Allows dynamic Vercel test deployments
+
+      const isAllowed =
+        allowedOrigins.some((allowed) => origin === allowed) ||
+        origin.endsWith('.vercel.app');
 
       if (isAllowed) {
         callback(null, true);
@@ -39,7 +66,11 @@ app.use(
   })
 );
 app.use(express.json());
+
+app.use(hpp());
 app.use(morganMiddleware);
+app.use('/api/v1/auth/login', loginLimiter);
+app.use('/api/v1', apiLimiter);
 
 app.get('/health', (_req: Request, res: Response): void => {
   res.status(200).json({ status: 'ok' });
