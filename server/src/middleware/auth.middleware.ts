@@ -16,8 +16,10 @@ export function authenticateToken(
   res: Response,
   next: NextFunction
 ): void {
+  const cookieToken: string | undefined = req.cookies?.auth_token;
   const authHeader: string | undefined = req.headers['authorization'];
-  const token: string | undefined = authHeader?.split(' ')[1];
+  const token: string | undefined =
+    cookieToken ?? authHeader?.split(' ')[1];
 
   if (!token) {
     res.status(401).json({ error: 'Access token required' });

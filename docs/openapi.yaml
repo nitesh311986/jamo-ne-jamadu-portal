@@ -11,6 +11,7 @@ servers:
     description: Local development server
 
 security:
+  - CookieAuth: []
   - BearerAuth: []
 
 paths:
@@ -42,6 +43,12 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many login attempts from this IP
           content:
             application/json:
               schema:
@@ -278,6 +285,33 @@ paths:
               schema:
                 type: string
                 format: binary
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sevaks/export/books-summary:
+    get:
+      summary: Download Sevak book allocations as an Excel file
+      operationId: exportSevakBooksSummary
+      tags:
+        - Sevaks
+      responses:
+        '200':
+          description: Excel file download
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '429':
+          description: Too many requests from this IP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Internal server error
           content:
@@ -987,6 +1021,10 @@ paths:
 
 components:
   securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: auth_token
     BearerAuth:
       type: http
       scheme: bearer
@@ -1009,11 +1047,8 @@ components:
     LoginResponse:
       type: object
       required:
-        - token
         - user
       properties:
-        token:
-          type: string
         user:
           $ref: '#/components/schemas/User'
 

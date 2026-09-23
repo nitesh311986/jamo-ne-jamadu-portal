@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { authenticateToken, requireRoles } from '../middleware/auth.middleware';
-import { login, createUser, getMe, listUsers } from '../controllers/auth.controller';
+import { login, createUser, getMe, listUsers, logout } from '../controllers/auth.controller';
 import { RoleName } from '@prisma/client';
 
 const router: Router = Router();
 
 router.post('/login', login);
+router.post('/logout', logout);
 
 router.post(
   '/users',

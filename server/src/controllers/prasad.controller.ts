@@ -59,6 +59,15 @@ export async function distributePrasad(
   res: Response
 ): Promise<void> {
   try {
+    if (process.env.FEATURE_PRASAD_ENABLED !== 'true') {
+      res.status(403).json({
+        success: false,
+        message: 'Prasad counter is currently locked until distribution phase.',
+        error: 'Prasad counter is currently locked until distribution phase.',
+      });
+      return;
+    }
+
     const body = req.body;
 
     if (!isValidDistributeBody(body)) {

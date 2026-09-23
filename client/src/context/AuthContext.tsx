@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type ReactElement } from 'react';
-import api, { getToken, setToken, removeToken } from '../api/axios';
+import api from '../api/axios';
 import { AuthContext } from './auth';
 import type { AuthContextValue } from './auth';
 import type { User, LoginResponse, MeResponse, ApiError } from '../types/auth';
@@ -11,21 +11,15 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps): ReactElement {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(!!getToken());
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      return;
-    }
-
     api
       .get<MeResponse>('/api/v1/auth/me')
       .then((response) => {
         setUser(response.data.user);
       })
       .catch(() => {
-        removeToken();
         setUser(null);
       })
       .finally(() => {
@@ -35,8 +29,10 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement {
 
   const login = async (email: string, password: string): Promise<void> => {
     try {
-      const response = await api.post<LoginResponse>('/api/v1/auth/login', { email, password });
-      setToken(response.data.token);
+      const response = await api.post<LoginResponse>('/api/v1/auth/login', {
+        email,
+        password,
+      });
       setUser(response.data.user);
     } catch (err) {
       const axiosError = err as AxiosError<ApiError>;
@@ -46,9 +42,15 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement {
   };
 
   const logout = (): void => {
-    removeToken();
-    setUser(null);
-    window.location.href = '/login';
+    api
+      .post('/api/v1/auth/logout')
+      .catch(() => {
+        // Ignore network errors; still clear local state and redirect.
+      })
+      .finally(() => {
+        setUser(null);
+        window.location.href = '/login';
+      });
   };
 
   const value: AuthContextValue = {

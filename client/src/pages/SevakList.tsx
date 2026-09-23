@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Check,
+  Download,
   FileDown,
   Loader2,
   Pencil,
@@ -72,6 +73,7 @@ export default function SevakList(): ReactElement {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isExportingBooks, setIsExportingBooks] = useState<boolean>(false);
 
   const [editingSevak, setEditingSevak] = useState<Sevak | null>(null);
   const [editForm, setEditForm] = useState<FormState>({
@@ -161,6 +163,34 @@ export default function SevakList(): ReactElement {
       );
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportBooks = async (): Promise<void> => {
+    setIsExportingBooks(true);
+    try {
+      const response = await api.get('/api/v1/sevaks/export/books-summary', {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data as BlobPart], {
+        type: String(
+          response.headers['content-type'] ??
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ),
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Sevak_Book_Allocations_2026.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(
+        (err as AxiosError<ApiError>).response?.data?.error ??
+          'Failed to download Sevak Books Excel'
+      );
+    } finally {
+      setIsExportingBooks(false);
     }
   };
 
@@ -290,6 +320,18 @@ export default function SevakList(): ReactElement {
           >
             {isExporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
             <span className="hidden sm:inline">Excel</span>
+          </button>
+          <button
+            onClick={handleExportBooks}
+            disabled={isExportingBooks}
+            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isExportingBooks ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Download size={16} />
+            )}
+            <span className="hidden sm:inline">Book Allocations</span>
           </button>
           <Link
             to="/sevaks/register"
