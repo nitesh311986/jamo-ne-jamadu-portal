@@ -44,14 +44,15 @@ export async function generateSevakCode(firstName: string, lastName: string): Pr
   const prefix = getNamePrefix(firstName, lastName);
 
   const existing = await prisma.sevak.findMany({
-    where: { sevakCode: { startsWith: prefix } },
     select: { sevakCode: true },
   });
 
+  const codePattern = /^[a-z]{2}2026(\d+)$/i;
   let maxSuffix = 0;
   for (const { sevakCode } of existing) {
-    const suffix = sevakCode.slice(prefix.length);
-    const n = parseInt(suffix, 10);
+    const match = sevakCode.match(codePattern);
+    if (!match) continue;
+    const n = parseInt(match[1], 10);
     if (!Number.isNaN(n) && n > maxSuffix) {
       maxSuffix = n;
     }
