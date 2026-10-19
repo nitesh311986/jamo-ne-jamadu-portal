@@ -469,7 +469,11 @@ export async function getSevakReceipts(
       return;
     }
 
-    const where = { sevakId };
+    const { bookNumber } = req.query;
+    const where = {
+      sevakId,
+      ...(bookNumber ? { bookNumber: String(bookNumber).trim() } : {}),
+    };
 
     const [total, receipts, books, groups, uniqueBookNumbers] = await prisma.$transaction([
       prisma.sevaReceipt.count({ where }),
@@ -1026,6 +1030,201 @@ export async function bulkSyncReceipts(
       return;
     }
     if (err instanceof Error && (err.message.includes('Receipt not found') || err.message.includes('Invalid'))) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    logger.error('Bulk sync receipts error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+interface BookBulkSyncReceiptItem {
+  id?: string;
+  receiptNo: string;
+  donorName?: string;
+  donorMobile?: string | null;
+  amount: number;
+}
+
+interface BookBulkSyncBody {
+  sevakId: string;
+  bookNumber: string;
+  receipts: BookBulkSyncReceiptItem[];
+}
+
+export async function bulkSyncBookReceipts(
+  req: Request<Record<string, never>, unknown, BookBulkSyncBody>,
+  res: Response
+): Promise<void> {
+  const { sevakId, bookNumber } = req.body;
+  const receipts = Array.isArray(req.body.receipts) ? req.body.receipts : [];
+
+  if (!sevakId?.trim()) {
+    res.status(400).json({ error: 'sevakId is required' });
+    return;
+  }
+
+  if (!bookNumber?.trim()) {
+    res.status(400).json({ error: 'bookNumber is required' });
+    return;
+  }
+
+  if (receipts.length === 0) {
+    res.status(400).json({ error: 'No receipts provided' });
+    return;
+  }
+
+  const trimmedBookNumber = String(bookNumber).trim();
+
+  try {
+    const sevak = await prisma.sevak.findUnique({
+      where: { id: sevakId },
+      select: { id: true },
+    });
+
+    if (!sevak) {
+      res.status(404).json({ error: 'Sevak not found' });
+      return;
+    }
+
+    const requestedKeys = new Set<string>();
+    const normalized: Array<{
+      id?: string;
+      receiptNo: string;
+      donorName: string | null;
+      donorMobile: string | null;
+      amount: number;
+    }> = [];
+
+    for (let i = 0; i < receipts.length; i += 1) {
+      const item = receipts[i];
+      const receiptNo = String(item.receiptNo ?? '').trim();
+      if (!receiptNo) {
+        res.status(400).json({ error: `Receipt at index ${i} is missing receiptNo` });
+        return;
+      }
+
+      const rawAmount = Number(item.amount);
+      if (Number.isNaN(rawAmount) || rawAmount < 0) {
+        res.status(400).json({ error: `Receipt at index ${i} has an invalid amount` });
+        return;
+      }
+      const amount = Math.round(rawAmount * 100) / 100;
+
+      const donorName = item.donorName ? String(item.donorName).trim() : '';
+      const donorMobile = item.donorMobile ? normalizeMobile(String(item.donorMobile)) : null;
+      if (donorMobile && donorMobile.length < 10) {
+        res.status(400).json({ error: `Receipt at index ${i} has an invalid donorMobile` });
+        return;
+      }
+
+      const key = `${trimmedBookNumber}|${receiptNo}`;
+      if (requestedKeys.has(key)) {
+        res.status(400).json({
+          error: `Duplicate receipt number ${receiptNo} detected within book ${trimmedBookNumber}`,
+        });
+        return;
+      }
+      requestedKeys.add(key);
+
+      normalized.push({
+        id: item.id,
+        receiptNo,
+        donorName: donorName || null,
+        donorMobile,
+        amount,
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const item of normalized) {
+        if (item.id) {
+          const existing = await tx.sevaReceipt.findUnique({
+            where: { id: item.id },
+            select: { id: true, bookNumber: true, receiptNo: true },
+          });
+
+          if (!existing) {
+            throw new Error(`Receipt not found: ${item.id}`);
+          }
+
+          if (existing.bookNumber !== trimmedBookNumber) {
+            throw new Error(`Receipt ${item.id} does not belong to Book ${trimmedBookNumber}`);
+          }
+
+          if (item.receiptNo !== existing.receiptNo) {
+            const duplicate = await tx.sevaReceipt.findUnique({
+              where: {
+                bookNumber_receiptNo: {
+                  bookNumber: trimmedBookNumber,
+                  receiptNo: item.receiptNo,
+                },
+              },
+            });
+            if (duplicate && duplicate.id !== existing.id) {
+              throw new Error(
+                `Receipt ${item.receiptNo} already exists in Book ${trimmedBookNumber}`
+              );
+            }
+          }
+
+          await tx.sevaReceipt.update({
+            where: { id: item.id },
+            data: {
+              receiptNo: item.receiptNo,
+              donorName: item.donorName,
+              donorMobile: item.donorMobile,
+              amount: new Prisma.Decimal(item.amount),
+            },
+          });
+        } else {
+          await tx.sevaReceipt.upsert({
+            where: {
+              bookNumber_receiptNo: {
+                bookNumber: trimmedBookNumber,
+                receiptNo: item.receiptNo,
+              },
+            },
+            create: {
+              sevakId,
+              bookNumber: trimmedBookNumber,
+              receiptNo: item.receiptNo,
+              donorName: item.donorName,
+              donorMobile: item.donorMobile,
+              amount: new Prisma.Decimal(item.amount),
+              entryDate: new Date(),
+            },
+            update: {
+              donorName: item.donorName,
+              donorMobile: item.donorMobile,
+              amount: new Prisma.Decimal(item.amount),
+            },
+          });
+        }
+      }
+    });
+
+    await updateBookStatusForBook(trimmedBookNumber);
+
+    const actorId = req.user?.userId ?? 'unknown';
+    await logAuditEvent(actorId, 'RECEIPTS_BULK_SYNC', {
+      sevakId,
+      bookNumber: trimmedBookNumber,
+      count: normalized.length,
+    });
+
+    res.status(200).json({ success: true, count: normalized.length });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('already exists')) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    if (
+      err instanceof Error &&
+      (err.message.includes('not found') ||
+        err.message.includes('does not belong') ||
+        err.message.includes('Invalid'))
+    ) {
       res.status(400).json({ error: err.message });
       return;
     }
