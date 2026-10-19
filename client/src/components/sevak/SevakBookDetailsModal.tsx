@@ -7,8 +7,7 @@ import {
   ChevronUp,
   Clock,
   MapPin,
-  Phone,
-  Users,
+  Phone,  
   X,
 } from 'lucide-react';
 import { useEffect, useState, type ReactElement } from 'react';
