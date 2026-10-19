@@ -12,6 +12,7 @@ import {
   Bell,
   Search as SearchIcon,
   BookOpen,
+  ClipboardList,
   Receipt,
   HandHeart,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ const navItems: NavItem[] = [
   { label: 'Sevak Registration', to: '/sevaks/register', icon: UserPlus, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Sevak Directory', to: '/sevaks', icon: Search, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Book Allocation', to: '/books/allocate', icon: BookOpen, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
+  { label: 'Sevak Book Records', to: '/sevaks/book-records', icon: ClipboardList, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Book Collection', to: '/receipts/entry', icon: BookOpen, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Receipt Search', to: '/receipts/search', icon: Receipt, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Prasad Counter', to: '#', icon: HandHeart, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'], disabled: true },
