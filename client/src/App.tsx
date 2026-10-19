@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import AdminUsers from './pages/AdminUsers';
 import SevakRegistration from './pages/SevakRegistration';
 import SevakList from './pages/SevakList';
+import SevakBookRecords from './pages/SevakBookRecords';
 import ReceiptEntry from './pages/ReceiptEntry';
 import ReceiptSearch from './pages/ReceiptSearch';
 import BookAllocation from './pages/BookAllocation';
@@ -21,6 +22,7 @@ function App(): ReactElement {
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/sevaks" element={<SevakList />} />
+            <Route path="/sevaks/book-records" element={<SevakBookRecords />} />
             <Route path="/sevaks/register" element={<SevakRegistration />} />
             <Route path="/receipts/entry" element={<ReceiptEntry />} />
             <Route path="/receipts/search" element={<ReceiptSearch />} />

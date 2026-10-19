@@ -155,3 +155,67 @@ The list view calls `GET /api/v1/sevaks/export/excel` with `responseType: 'blob'
 - `client/src/App.tsx`
 - `docs/openapi.yaml`
 - `docs/MODULE2_SEVAK_REGISTRATION.md`
+
+## Book Records Screen
+
+### Purpose
+
+The **Sevak Book Records** screen is a consolidated administrative view that lists every registered sevak along with the full allocation status of each assigned book: `ASSIGNED`, `SUBMITTED`, or `PARTIALLY_SUBMITTED`.
+
+### Backend
+
+#### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/sevaks/book-records` | Paginated sevak records with book allocation aggregates |
+| GET | `/api/v1/sevaks/export/book-records` | Download formatted `.xlsx` of all matching records |
+| PUT | `/api/v1/sevaks/:id` | Update sevak personal/contact details |
+| DELETE | `/api/v1/sevaks/:id` | Delete sevak if no active donation receipts exist |
+
+#### `GET /api/v1/sevaks/book-records`
+
+**Query parameters**
+- `search` — optional string matching `fullName`, `sevakCode`, `mobile`, or `mandal` (case-insensitive)
+- `mandal` — optional exact-ish filter (case-insensitive)
+- `page` — default `1`
+- `limit` — default `10`, allowed values `10`, `20`, `50`
+
+**Aggregates returned per sevak**
+- `allocatedBooks` — all assigned book numbers
+- `submittedBooks` — book numbers with status `SUBMITTED`
+- `partialSubmittedBooks` — book numbers with status `PARTIALLY_SUBMITTED`
+- `assignedOnlyBooks` — book numbers with status `ASSIGNED`
+- `totalBooksCount`, `submittedCount`, `partialCount`, `assignedCount`
+
+#### `GET /api/v1/sevaks/export/book-records`
+
+- Uses `exceljs` with a saffron header row (`#D97706`) and white bold text.
+- Columns include sevak details, total allocated count, allocated book numbers, submitted/partial counts and book numbers, plus `expectedContacts`.
+- Filename: `Sevak_Book_Records_2026.xlsx`.
+
+#### `DELETE /api/v1/sevaks/:id` safeguard
+
+A sevak can only be deleted when they have **no `SevaReceipt` rows with `amount > 0`**. If active donation receipts exist, the API returns `400 Bad Request` with the message:
+
+```
+Cannot delete Sevak with active donation receipts. Void receipts first.
+```
+
+### Frontend
+
+- **Page**: `client/src/pages/SevakBookRecords.tsx`
+- **Route**: `/sevaks/book-records` (mounted inside `DashboardLayout` + `ProtectedRoute`)
+- **Navigation**: Added to `DashboardLayout` as "Sevak Book Records" with `ClipboardList` icon
+
+**Features**
+- Real-time debounced search by name, code, mandal, or mobile.
+- Paginated data table with 10/20/50 row options.
+- Color-coded status cells:
+  - Submitted books: green badges
+  - Partially submitted: yellow badges
+  - Still assigned: grey badges
+- Expandable inline book number tags.
+- One-click Excel export with `FileSpreadsheet` icon.
+- Inline **Edit** and **Delete** actions with confirmation and success/error toasts.
+- Edit modal supporting all editable sevak fields (name, mobile, alt mobile, WhatsApp, mandal, kshetra, address, expected contacts).

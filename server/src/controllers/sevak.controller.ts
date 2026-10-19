@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import type { Sevak } from '@prisma/client';
+import { Prisma, type Sevak } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import prisma from '../lib/prisma';
 import { logAuditEvent } from '../utils/audit';
@@ -33,6 +33,147 @@ interface UpdateSevakBody {
 }
 
 const YEAR = '2026';
+
+function toINR(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+interface ClassifiedReceipt {
+  id: string;
+  bookNumber: string;
+  receiptNo: string;
+  donorName: string;
+  donorMobile: string;
+  amount: number;
+  entryDate: string;
+}
+
+interface SubmittedBook {
+  bookNumber: string;
+  receiptCount: number;
+  totalAmount: number;
+  receipts: ClassifiedReceipt[];
+}
+
+interface PartialBook {
+  bookNumber: string;
+  receiptCount: number;
+  remainingCount: number;
+  totalAmount: number;
+  receipts: ClassifiedReceipt[];
+}
+
+interface AssignedOnlyBook {
+  bookNumber: string;
+  receiptCount: number;
+}
+
+interface ClassifiedBooks {
+  totalAllocatedCount: number;
+  submittedCount: number;
+  partialCount: number;
+  stillAssignedCount: number;
+  totalSevaAmount: number;
+  submittedBooks: SubmittedBook[];
+  partialBooks: PartialBook[];
+  assignedOnlyBooks: AssignedOnlyBook[];
+}
+
+function formatClassifiedReceipt(
+  receipt: {
+    id: string;
+    bookNumber: string;
+    receiptNo: string;
+    donorName: string | null;
+    donorMobile: string | null;
+    amount: Prisma.Decimal;
+    entryDate: Date;
+  }
+): ClassifiedReceipt {
+  return {
+    id: receipt.id,
+    bookNumber: receipt.bookNumber,
+    receiptNo: receipt.receiptNo,
+    donorName: receipt.donorName ?? '',
+    donorMobile: receipt.donorMobile ?? '',
+    amount: toINR(receipt.amount.toNumber()),
+    entryDate: receipt.entryDate.toISOString(),
+  };
+}
+
+function classifySevakBooks(sevak: {
+  assignedBooks: { bookNumber: string }[];
+  receipts: {
+    id: string;
+    bookNumber: string;
+    receiptNo: string;
+    donorName: string | null;
+    donorMobile: string | null;
+    amount: Prisma.Decimal;
+    entryDate: Date;
+  }[];
+}): ClassifiedBooks {
+  const submittedBooks: SubmittedBook[] = [];
+  const partialBooks: PartialBook[] = [];
+  const assignedOnlyBooks: AssignedOnlyBook[] = [];
+
+  for (const book of sevak.assignedBooks) {
+    const bookReceipts = sevak.receipts
+      .filter((r) => r.bookNumber === book.bookNumber)
+      .sort((a, b) => {
+        const aNum = Number(a.receiptNo);
+        const bNum = Number(b.receiptNo);
+        if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+          return aNum - bNum;
+        }
+        return a.receiptNo.localeCompare(b.receiptNo);
+      })
+      .map(formatClassifiedReceipt);
+
+    if (bookReceipts.length === 10) {
+      const totalAmount = toINR(
+        bookReceipts.reduce((sum, r) => sum + r.amount, 0)
+      );
+      submittedBooks.push({
+        bookNumber: book.bookNumber,
+        receiptCount: 10,
+        totalAmount,
+        receipts: bookReceipts,
+      });
+    } else if (bookReceipts.length > 0) {
+      const totalAmount = toINR(
+        bookReceipts.reduce((sum, r) => sum + r.amount, 0)
+      );
+      partialBooks.push({
+        bookNumber: book.bookNumber,
+        receiptCount: bookReceipts.length,
+        remainingCount: 10 - bookReceipts.length,
+        totalAmount,
+        receipts: bookReceipts,
+      });
+    } else {
+      assignedOnlyBooks.push({
+        bookNumber: book.bookNumber,
+        receiptCount: 0,
+      });
+    }
+  }
+
+  const totalSevaAmount = toINR(
+    sevak.receipts.reduce((sum, r) => sum + r.amount.toNumber(), 0)
+  );
+
+  return {
+    totalAllocatedCount: sevak.assignedBooks.length,
+    submittedCount: submittedBooks.length,
+    partialCount: partialBooks.length,
+    stillAssignedCount: assignedOnlyBooks.length,
+    totalSevaAmount,
+    submittedBooks,
+    partialBooks,
+    assignedOnlyBooks,
+  };
+}
 
 function getNamePrefix(firstName: string, lastName: string): string {
   const firstInitial = (firstName.trim()[0] ?? 'x').toLowerCase();
@@ -398,9 +539,16 @@ export async function deleteSevak(
       return;
     }
 
-    const receiptCount = await prisma.sevaReceipt.count({ where: { sevakId: id } });
-    if (receiptCount > 0) {
-      res.status(400).json({ error: 'Cannot delete Sevak with active donation receipts' });
+    const activeReceipt = await prisma.sevaReceipt.findFirst({
+      where: {
+        sevakId: id,
+        amount: { gt: new Prisma.Decimal(0) },
+      },
+    });
+    if (activeReceipt) {
+      res.status(400).json({
+        error: 'Cannot delete Sevak with active donation receipts. Void receipts first.',
+      });
       return;
     }
 
@@ -521,6 +669,233 @@ export async function exportSevakBooksSummary(_req: Request, res: Response): Pro
     res.end();
   } catch (err) {
     logger.error('Export sevak books summary error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function getSevakBookRecords(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const { page, skip, take } = parsePaginationParams(req.query);
+  const search =
+    typeof req.query.search === 'string' ? req.query.search : undefined;
+  const mandal =
+    typeof req.query.mandal === 'string' ? req.query.mandal : undefined;
+
+  const where: Prisma.SevakWhereInput = {
+    ...(search
+      ? {
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { sevakCode: { contains: search, mode: 'insensitive' } },
+            { mobile: { contains: search } },
+            { mandal: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+      : {}),
+    ...(mandal ? { mandal: { equals: mandal, mode: 'insensitive' } } : {}),
+  };
+
+  try {
+    const [totalCount, sevaks] = await prisma.$transaction([
+      prisma.sevak.count({ where }),
+      prisma.sevak.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          assignedBooks: {
+            orderBy: { bookNumber: 'asc' },
+          },
+          receipts: {
+            select: {
+              id: true,
+              bookNumber: true,
+              receiptNo: true,
+              donorName: true,
+              donorMobile: true,
+              amount: true,
+              entryDate: true,
+            },
+            orderBy: { receiptNo: 'asc' },
+          },
+        },
+      }),
+    ]);
+
+    const sevaksWithAggregates = sevaks.map((sevak) => ({
+      ...sevak,
+      ...classifySevakBooks(sevak),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: sevaksWithAggregates,
+      pagination: {
+        totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / take)),
+        currentPage: page,
+        pageSize: take,
+      },
+    });
+  } catch (err) {
+    logger.error('Get sevak book records error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function exportSevakBookRecords(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const search =
+    typeof req.query.search === 'string' ? req.query.search : undefined;
+  const mandal =
+    typeof req.query.mandal === 'string' ? req.query.mandal : undefined;
+
+  const where: Prisma.SevakWhereInput = {
+    ...(search
+      ? {
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { sevakCode: { contains: search, mode: 'insensitive' } },
+            { mobile: { contains: search } },
+            { mandal: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+      : {}),
+    ...(mandal ? { mandal: { equals: mandal, mode: 'insensitive' } } : {}),
+  };
+
+  try {
+    const sevaks = await prisma.sevak.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        assignedBooks: {
+          orderBy: { bookNumber: 'asc' },
+        },
+        receipts: {
+          select: {
+            id: true,
+            bookNumber: true,
+            receiptNo: true,
+            donorName: true,
+            donorMobile: true,
+            amount: true,
+            entryDate: true,
+          },
+          orderBy: { receiptNo: 'asc' },
+        },
+      },
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.title = 'BAPS Anand - Sevak Book Records (2026)';
+    workbook.creator = 'BAPS Anand';
+
+    const worksheet = workbook.addWorksheet('Sevak Book Records');
+    const totalColumns = 13;
+
+    const titleRow = worksheet.addRow(['BAPS Anand - Sevak Book Records (2026)']);
+    titleRow.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } } as ExcelJS.Font;
+    titleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D97706' } } as ExcelJS.Fill;
+    titleRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.mergeCells(1, 1, 1, totalColumns);
+
+    const headerRow = worksheet.addRow([
+      'Sevak Code',
+      'Full Name',
+      'Mobile',
+      'Alt Mobile',
+      'WhatsApp',
+      'Mandal',
+      'Kshetra',
+      'Total Allocated Books Count',
+      'Allocated Book Numbers',
+      'Submitted Books (10/10)',
+      'Partially Submitted Books (<10)',
+      'Still Assigned Books (0/10)',
+      'Expected Contacts',
+    ]);
+
+    const headerFill: Partial<ExcelJS.Fill> = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'D97706' },
+    };
+    const headerFont: Partial<ExcelJS.Font> = {
+      bold: true,
+      color: { argb: 'FFFFFF' },
+    };
+    const headerBorder: Partial<ExcelJS.Borders> = {
+      top: { style: 'thin', color: { argb: '000000' } },
+      left: { style: 'thin', color: { argb: '000000' } },
+      bottom: { style: 'thin', color: { argb: '000000' } },
+      right: { style: 'thin', color: { argb: '000000' } },
+    };
+
+    headerRow.eachCell((cell) => {
+      cell.fill = headerFill as ExcelJS.Fill;
+      cell.font = headerFont as ExcelJS.Font;
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = headerBorder as ExcelJS.Borders;
+    });
+
+    worksheet.getRow(1).height = 28;
+    worksheet.getRow(2).height = 28;
+
+    for (let col = 1; col <= totalColumns; col += 1) {
+      worksheet.getColumn(col).width = col <= 7 ? 18 : 24;
+    }
+
+    for (const sevak of sevaks) {
+      const allocatedBookNumbers = sevak.assignedBooks
+        .map((b) => b.bookNumber)
+        .join(', ');
+      const classified = classifySevakBooks(sevak);
+      const submittedBooksText = classified.submittedBooks
+        .map((b) => b.bookNumber)
+        .join(', ');
+      const partialBooksText = classified.partialBooks
+        .map((b) => `${b.bookNumber} (${b.receiptCount}/10)`)
+        .join(', ');
+      const assignedBooksText = classified.assignedOnlyBooks
+        .map((b) => b.bookNumber)
+        .join(', ');
+
+      worksheet.addRow([
+        sevak.sevakCode,
+        sevak.fullName,
+        sevak.mobile,
+        sevak.altMobile ?? '',
+        sevak.whatsapp ?? '',
+        sevak.mandal,
+        sevak.kshetra,
+        sevak.assignedBooks.length,
+        allocatedBookNumbers,
+        submittedBooksText,
+        partialBooksText,
+        assignedBooksText,
+        sevak.expectedContacts,
+      ]);
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="Sevak_Book_Records_2026.xlsx"'
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    logger.error('Export sevak book records error', { error: err });
     res.status(500).json({ error: 'Internal server error' });
   }
 }
