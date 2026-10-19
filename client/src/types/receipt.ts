@@ -25,6 +25,17 @@ export interface ReceiptInput {
   amount: string;
 }
 
+export interface ReceiptDraftRow {
+  tempId: string;
+  id?: string;
+  bookNumber: string;
+  receiptNo: string;
+  donorName: string;
+  donorMobile: string;
+  amount: string | number;
+  isSaved?: boolean;
+}
+
 export interface CreateReceiptsRequest {
   sevakId: string;
   receipts: ReceiptInput[];
@@ -68,14 +79,21 @@ export interface NewReceiptItem {
   entryDate?: string | null;
 }
 
+export interface BulkSyncBookItem {
+  id?: string;
+  receiptNo: string;
+  donorName?: string;
+  donorMobile?: string | null;
+  amount: number;
+}
+
 export interface BulkSyncRequest {
   sevakId: string;
-  updates: ReceiptUpdateItem[];
-  additions: NewReceiptItem[];
+  bookNumber: string;
+  receipts: BulkSyncBookItem[];
 }
 
 export interface BulkSyncResponse {
-  sevak: { id: string; sevakCode: string; fullName: string; mandal: string };
-  receipts: Receipt[];
-  summary: ReceiptSummaryResponse;
+  success: boolean;
+  count: number;
 }

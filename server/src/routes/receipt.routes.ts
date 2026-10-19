@@ -8,7 +8,7 @@ import {
   getSevakReceipts,
   updateReceipt,
   deleteReceipt,
-  bulkSyncReceipts,
+  bulkSyncBookReceipts,
 } from '../controllers/receipt.controller';
 
 const router: Router = Router();
@@ -19,7 +19,7 @@ router.get('/sevak/:sevakId', authenticateToken, getSevakReceipts);
 router.get('/sevak/:sevakId/summary', authenticateToken, getSevakReceiptSummary);
 router.put('/:receiptId', authenticateToken, updateReceipt);
 router.delete('/:receiptId', authenticateToken, deleteReceipt);
-router.post('/bulk-sync', authenticateToken, bulkSyncReceipts);
+router.post('/bulk-sync', authenticateToken, bulkSyncBookReceipts);
 router.get('/export/excel', authenticateToken, exportReceiptsExcel);
 
 export default router;
