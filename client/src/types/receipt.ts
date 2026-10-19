@@ -15,6 +15,8 @@ export interface Receipt {
   createdAt: string;
   sevak?: { sevakCode: string; fullName: string; mandal: string };
   book?: BookMeta | null;
+  sahSevakName?: string | null;
+  sahSevakMobile?: string | null;
 }
 
 export interface ReceiptInput {
@@ -91,6 +93,8 @@ export interface BulkSyncRequest {
   sevakId: string;
   bookNumber: string;
   receipts: BulkSyncBookItem[];
+  sahSevakName?: string;
+  sahSevakMobile?: string;
 }
 
 export interface BulkSyncResponse {

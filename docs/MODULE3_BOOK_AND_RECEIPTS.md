@@ -10,14 +10,15 @@ This module implements the **Book Allocation** and **Receipt (Seva)** entry flow
 |--------|------|-------------|
 | POST | `/api/v1/books/assign` | Assign a unique `bookNumber` to a `sevakId` |
 | GET | `/api/v1/books/sevak/:sevakId` | List books assigned to a sevak |
+| GET | `/api/v1/books/:bookNumber` | Get a single book allocation by number |
 | POST | `/api/v1/receipts` | Create one or many receipts for a sevak |
-| GET | `/api/v1/receipts/search` | Search by `bookNumber`, `receiptNo`, `donorName`, `donorMobile`, and `sevakCode` |
+| GET | `/api/v1/receipts/search` | Search by `bookNumber`, `receiptNo`, `donorName`, `donorMobile`, `sevakCode`, `sahSevakName`, and `sahSevakMobile` |
 | GET | `/api/v1/receipts/sevak/:sevakId` | List receipts for a sevak with book metadata |
 | GET | `/api/v1/receipts/sevak/:sevakId/summary` | Real-time aggregation by amount |
 | PUT | `/api/v1/receipts/:receiptId` | Update a single receipt |
 | DELETE | `/api/v1/receipts/:receiptId` | Delete a single receipt and recalculate book status |
-| POST | `/api/v1/receipts/bulk-sync` | Synchronize updates and additions for a sevak |
-| GET | `/api/v1/receipts/export/excel` | Download all receipts + summary as `.xlsx` |
+| POST | `/api/v1/receipts/bulk-sync` | Synchronize all receipts for a single book and optionally update Sah-Sevak details |
+| GET | `/api/v1/receipts/export/excel` | Download filtered receipts + summary as `.xlsx` with distinct Sah-Sevak columns |
 
 All endpoints require a valid JWT (`authenticateToken`).
 
@@ -40,6 +41,8 @@ Returns the `BookAllocation` rows for a sevak, ordered by `assignedAt` descendin
 - `sevakId`
 - `status` (`ASSIGNED`, `SUBMITTED`, `PARTIALLY_SUBMITTED`)
 - `assignedAt`
+- `sahSevakName` — optional co-volunteer name for the book
+- `sahSevakMobile` — optional co-volunteer mobile for the book
 
 ### POST `/api/v1/receipts`
 
@@ -80,10 +83,12 @@ Query parameters (all optional):
 - `donorName` (partial, case-insensitive match)
 - `donorMobile`
 - `sevakCode` (partial, case-insensitive match)
+- `sahSevakName` (partial, case-insensitive match on the book's Sah-Sevak name)
+- `sahSevakMobile` (partial match on the book's Sah-Sevak mobile)
 - `page` (default `1`)
 - `limit` (default `20`, max `100`)
 
-Response is paginated and includes the related sevak stub (`sevakCode`, `fullName`, `mandal`).
+Response is paginated and includes the related sevak stub (`sevakCode`, `fullName`, `mandal`) and each receipt also exposes `sahSevakName` / `sahSevakMobile` for its book.
 
 ### GET `/api/v1/receipts/sevak/:sevakId/summary`
 
@@ -107,16 +112,35 @@ The backend groups by distinct `amount` values, so any denomination — includin
 
 ### GET `/api/v1/receipts/export/excel`
 
+Query parameters are the same as `/api/v1/receipts/search` (all optional):
+- `bookNumber`
+- `receiptNo`
+- `donorName` (partial, case-insensitive)
+- `donorMobile`
+- `sevakCode` (partial, case-insensitive)
+- `sahSevakName` (partial, case-insensitive match on the book's Sah-Sevak name)
+- `sahSevakMobile` (partial match on the book's Sah-Sevak mobile)
+
 Streams a two-tab Excel file:
-- **Receipts** — donor details, book / receipt numbers, amount, entry date, sevak code/name, mandal.
+- **Receipts** — one row per receipt with the following distinct columns:
+  1. Book No
+  2. Receipt No
+  3. Donor Name (or `-`)
+  4. Donor Mobile (or `-`)
+  5. Amount
+  6. Sevak Code
+  7. Sevak Full Name
+  8. Sah-Sevak Name (or `-`)
+  9. Sah-Sevak Mobile (or `-`)
+  10. Date (formatted `DD/MM/YYYY`)
 - **Summary** — denomination breakdown, count, sub-total, plus a grand total row.
 
 ## Frontend
 
 ### Pages
 
-- `client/src/pages/ReceiptEntry.tsx` — Quick sevak search (by code, phone, or name), sevak summary banner, inline receipt entry grid with Enter-key navigation, and a live calculation card.
-- `client/src/pages/ReceiptSearch.tsx` — Filtered search across `bookNumber`, `receiptNo`, `donorName`, `donorMobile`, and `sevakCode`, with a paginated table and Excel export.
+- `client/src/pages/ReceiptEntry.tsx` — Quick sevak search (by code, phone, or name), sevak summary banner, inline receipt entry grid with optional Sah-Sevak name/mobile per book, and a live calculation card.
+- `client/src/pages/ReceiptSearch.tsx` — Filtered search across `bookNumber`, `receiptNo`, `donorName`, `donorMobile`, `sevakCode`, `sahSevakName`, and `sahSevakMobile`, with a paginated table and Excel export.
 
 ### Receipt entry flow
 
@@ -143,6 +167,10 @@ model BookAllocation {
   sevak      Sevak      @relation(fields: [sevakId], references: [id], onDelete: Cascade)
   status     BookStatus @default(ASSIGNED)
   assignedAt DateTime   @default(now())
+
+  // Sah-Sevak (co-volunteer / assistant) tracking
+  sahSevakName   String?
+  sahSevakMobile String?
 }
 
 model SevaReceipt {
@@ -180,7 +208,8 @@ model SevaReceipt {
      - `ASSIGNED` when no receipts remain.
      - `SUBMITTED` when the numeric receipt numbers are a complete `1..N` sequence with no gaps.
      - `PARTIALLY_SUBMITTED` in all other cases (gaps, non-numeric, or out-of-sequence numbers).
-5. Return the refreshed receipt list and an aggregate summary (denomination groups, grand total, total count, and unique book count).
+5. Update `BookAllocation.sahSevakName` and `BookAllocation.sahSevakMobile` when provided in the request body.
+6. Return `{ success: true, count: <number> }`.
 
 ### Frontend optimistic UI
 

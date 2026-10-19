@@ -364,7 +364,7 @@ paths:
 
   /sevaks/export/book-records:
     get:
-      summary: Download sevak book records as a formatted Excel file
+      summary: Download itemized sevak book records as a formatted multi-sheet Excel file
       operationId: exportSevakBookRecords
       tags:
         - Sevaks
@@ -379,7 +379,7 @@ paths:
             type: string
       responses:
         '200':
-          description: Excel file download
+          description: Excel file download (Book-Level Breakdown sheet per assigned book and Sevak Master Summary sheet per sevak)
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
@@ -665,6 +665,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /books/{bookNumber}:
+    get:
+      summary: Get a single book allocation by book number
+      operationId: getBookByNumber
+      tags:
+        - Books
+      parameters:
+        - in: path
+          name: bookNumber
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Book allocation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookResponse'
+        '404':
+          description: Book not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /receipts:
     post:
       summary: Create one or many receipts
@@ -705,7 +737,7 @@ paths:
 
   /receipts/search:
     get:
-      summary: Search receipts by book, number, donor, mobile, or sevak code
+      summary: Search receipts by book, number, donor, mobile, sevak code, or Sah-Sevak
       operationId: searchReceipts
       tags:
         - Receipts
@@ -729,6 +761,16 @@ paths:
         - in: query
           name: sevakCode
           description: Filter receipts by Sevak 6-character code (case-insensitive substring)
+          schema:
+            type: string
+        - in: query
+          name: sahSevakName
+          description: Filter by Sah-Sevak (co-volunteer) name
+          schema:
+            type: string
+        - in: query
+          name: sahSevakMobile
+          description: Filter by Sah-Sevak (co-volunteer) mobile
           schema:
             type: string
         - in: query
@@ -961,13 +1003,42 @@ paths:
 
   /receipts/export/excel:
     get:
-      summary: Export all receipts with a summary sheet
+      summary: Export filtered receipts with Sah-Sevak columns and a summary sheet
       operationId: exportReceiptsExcel
       tags:
         - Receipts
+      parameters:
+        - in: query
+          name: bookNumber
+          schema:
+            type: string
+        - in: query
+          name: receiptNo
+          schema:
+            type: string
+        - in: query
+          name: donorName
+          schema:
+            type: string
+        - in: query
+          name: donorMobile
+          schema:
+            type: string
+        - in: query
+          name: sevakCode
+          schema:
+            type: string
+        - in: query
+          name: sahSevakName
+          schema:
+            type: string
+        - in: query
+          name: sahSevakMobile
+          schema:
+            type: string
       responses:
         '200':
-          description: Excel file download
+          description: Excel file download (Receipts sheet with Book No, Receipt No, Donor Name, Donor Mobile, Amount, Sevak Code, Sevak Full Name, Sah-Sevak Name, Sah-Sevak Mobile, Date; plus Summary sheet)
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
@@ -1403,6 +1474,14 @@ components:
         assignedAt:
           type: string
           format: date-time
+        sahSevakName:
+          type: string
+          nullable: true
+          description: Sah-Sevak (co-volunteer) name for this book
+        sahSevakMobile:
+          type: string
+          nullable: true
+          description: Sah-Sevak (co-volunteer) mobile for this book
 
     BookResponse:
       type: object
@@ -1552,6 +1631,14 @@ components:
           format: date-time
         sevak:
           $ref: '#/components/schemas/SevakStub'
+        sahSevakName:
+          type: string
+          nullable: true
+          description: Sah-Sevak (co-volunteer) name for the book of this receipt
+        sahSevakMobile:
+          type: string
+          nullable: true
+          description: Sah-Sevak (co-volunteer) mobile for the book of this receipt
 
     SevakStub:
       type: object
@@ -1698,6 +1785,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NewReceiptItem'
+        sahSevakName:
+          type: string
+          nullable: true
+          description: Optional Sah-Sevak (co-volunteer) name for the affected book
+        sahSevakMobile:
+          type: string
+          nullable: true
+          description: Optional Sah-Sevak (co-volunteer) mobile for the affected book
 
     ReceiptUpdateItem:
       type: object
@@ -2127,6 +2222,8 @@ components:
                   - bookNumber
                   - receiptCount
                   - totalAmount
+                  - sahSevakName
+                  - sahSevakMobile
                   - receipts
                 properties:
                   bookNumber:
@@ -2135,6 +2232,12 @@ components:
                     type: integer
                   totalAmount:
                     type: number
+                  sahSevakName:
+                    type: string
+                    nullable: true
+                  sahSevakMobile:
+                    type: string
+                    nullable: true
                   receipts:
                     type: array
                     items:
@@ -2148,6 +2251,8 @@ components:
                   - receiptCount
                   - remainingCount
                   - totalAmount
+                  - sahSevakName
+                  - sahSevakMobile
                   - receipts
                 properties:
                   bookNumber:
@@ -2158,6 +2263,12 @@ components:
                     type: integer
                   totalAmount:
                     type: number
+                  sahSevakName:
+                    type: string
+                    nullable: true
+                  sahSevakMobile:
+                    type: string
+                    nullable: true
                   receipts:
                     type: array
                     items:
@@ -2169,11 +2280,19 @@ components:
                 required:
                   - bookNumber
                   - receiptCount
+                  - sahSevakName
+                  - sahSevakMobile
                 properties:
                   bookNumber:
                     type: string
                   receiptCount:
                     type: integer
+                  sahSevakName:
+                    type: string
+                    nullable: true
+                  sahSevakMobile:
+                    type: string
+                    nullable: true
 
     SevakBookReceiptSummary:
       type: object
