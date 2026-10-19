@@ -78,8 +78,14 @@ model BookAllocation {
   status     BookStatus @default(ASSIGNED)
   assignedAt DateTime   @default(now())
 
+  // --- Sah-Sevak (Co-volunteer / Assistant) Extensions ---
+  sahSevakName    String?     // સહ-સેવક નામ (Optional)
+  sahSevakMobile  String?     // સહ-સેવક મોબાઇલ (Optional)
+
   @@index([bookNumber])
   @@index([sevakId])
+  @@index([sahSevakName])
+  @@index([sahSevakMobile])
   @@index([assignedAt(sort: Desc)])
 }
 

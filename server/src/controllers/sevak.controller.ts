@@ -52,6 +52,8 @@ interface SubmittedBook {
   bookNumber: string;
   receiptCount: number;
   totalAmount: number;
+  sahSevakName: string | null;
+  sahSevakMobile: string | null;
   receipts: ClassifiedReceipt[];
 }
 
@@ -60,12 +62,16 @@ interface PartialBook {
   receiptCount: number;
   remainingCount: number;
   totalAmount: number;
+  sahSevakName: string | null;
+  sahSevakMobile: string | null;
   receipts: ClassifiedReceipt[];
 }
 
 interface AssignedOnlyBook {
   bookNumber: string;
   receiptCount: number;
+  sahSevakName: string | null;
+  sahSevakMobile: string | null;
 }
 
 interface ClassifiedBooks {
@@ -102,7 +108,11 @@ function formatClassifiedReceipt(
 }
 
 function classifySevakBooks(sevak: {
-  assignedBooks: { bookNumber: string }[];
+  assignedBooks: {
+    bookNumber: string;
+    sahSevakName: string | null;
+    sahSevakMobile: string | null;
+  }[];
   receipts: {
     id: string;
     bookNumber: string;
@@ -138,6 +148,8 @@ function classifySevakBooks(sevak: {
         bookNumber: book.bookNumber,
         receiptCount: 10,
         totalAmount,
+        sahSevakName: book.sahSevakName,
+        sahSevakMobile: book.sahSevakMobile,
         receipts: bookReceipts,
       });
     } else if (bookReceipts.length > 0) {
@@ -149,12 +161,16 @@ function classifySevakBooks(sevak: {
         receiptCount: bookReceipts.length,
         remainingCount: 10 - bookReceipts.length,
         totalAmount,
+        sahSevakName: book.sahSevakName,
+        sahSevakMobile: book.sahSevakMobile,
         receipts: bookReceipts,
       });
     } else {
       assignedOnlyBooks.push({
         bookNumber: book.bookNumber,
         receiptCount: 0,
+        sahSevakName: book.sahSevakName,
+        sahSevakMobile: book.sahSevakMobile,
       });
     }
   }
@@ -793,94 +809,180 @@ export async function exportSevakBookRecords(
     });
 
     const workbook = new ExcelJS.Workbook();
-    workbook.title = 'BAPS Anand - Sevak Book Records (2026)';
     workbook.creator = 'BAPS Anand';
 
-    const worksheet = workbook.addWorksheet('Sevak Book Records');
-    const totalColumns = 13;
+    const breakdown = workbook.addWorksheet('Book-Level Breakdown (પુસ્તિકા વિગત)');
+    const summary = workbook.addWorksheet('Sevak Master Summary (સેવક સારાંશ)');
 
-    const titleRow = worksheet.addRow(['BAPS Anand - Sevak Book Records (2026)']);
-    titleRow.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } } as ExcelJS.Font;
-    titleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D97706' } } as ExcelJS.Fill;
-    titleRow.alignment = { horizontal: 'center', vertical: 'middle' };
-    worksheet.mergeCells(1, 1, 1, totalColumns);
+    breakdown.columns = [
+      { key: 'sevakCode', width: 16 },
+      { key: 'fullName', width: 28 },
+      { key: 'mobile', width: 16 },
+      { key: 'mandal', width: 20 },
+      { key: 'kshetra', width: 20 },
+      { key: 'bookNumber', width: 14 },
+      { key: 'status', width: 22 },
+      { key: 'completedReceipts', width: 18 },
+      { key: 'sahSevakName', width: 24 },
+      { key: 'sahSevakMobile', width: 16 },
+      { key: 'totalSevaAmount', width: 18 },
+    ];
 
-    const headerRow = worksheet.addRow([
+    const breakdownHeader = breakdown.addRow([
+      'Sevak Code',
+      'Sevak Full Name',
+      'Mobile',
+      'Mandal',
+      'Kshetra',
+      'Book Number',
+      'Book Status',
+      'Completed Receipts',
+      'Sah-Sevak Name',
+      'Sah-Sevak Mobile',
+      'Total Seva Amount',
+    ]);
+
+    summary.columns = [
+      { key: 'sevakCode', width: 16 },
+      { key: 'fullName', width: 28 },
+      { key: 'mobile', width: 16 },
+      { key: 'mandal', width: 20 },
+      { key: 'totalBooks', width: 22 },
+      { key: 'submittedBooks', width: 22 },
+      { key: 'partialBooks', width: 22 },
+      { key: 'assignedBooks', width: 22 },
+      { key: 'totalSevaAmount', width: 18 },
+    ];
+
+    const summaryHeader = summary.addRow([
       'Sevak Code',
       'Full Name',
       'Mobile',
-      'Alt Mobile',
-      'WhatsApp',
       'Mandal',
-      'Kshetra',
-      'Total Allocated Books Count',
-      'Allocated Book Numbers',
-      'Submitted Books (10/10)',
-      'Partially Submitted Books (<10)',
-      'Still Assigned Books (0/10)',
-      'Expected Contacts',
+      'Total Books Allocated',
+      'Submitted Books Count',
+      'Partial Books Count',
+      'Still Assigned Count',
+      'Total Seva Amount',
     ]);
 
-    const headerFill: Partial<ExcelJS.Fill> = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'D97706' },
-    };
-    const headerFont: Partial<ExcelJS.Font> = {
-      bold: true,
-      color: { argb: 'FFFFFF' },
-    };
-    const headerBorder: Partial<ExcelJS.Borders> = {
-      top: { style: 'thin', color: { argb: '000000' } },
-      left: { style: 'thin', color: { argb: '000000' } },
-      bottom: { style: 'thin', color: { argb: '000000' } },
-      right: { style: 'thin', color: { argb: '000000' } },
+    const styleHeader = (headerRow: ExcelJS.Row): void => {
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'D97706' },
+        } as ExcelJS.Fill;
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'D4D4D4' } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } },
+        };
+      });
+      headerRow.height = 28;
     };
 
-    headerRow.eachCell((cell) => {
-      cell.fill = headerFill as ExcelJS.Fill;
-      cell.font = headerFont as ExcelJS.Font;
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = headerBorder as ExcelJS.Borders;
-    });
-
-    worksheet.getRow(1).height = 28;
-    worksheet.getRow(2).height = 28;
-
-    for (let col = 1; col <= totalColumns; col += 1) {
-      worksheet.getColumn(col).width = col <= 7 ? 18 : 24;
-    }
+    styleHeader(breakdownHeader);
+    styleHeader(summaryHeader);
 
     for (const sevak of sevaks) {
-      const allocatedBookNumbers = sevak.assignedBooks
-        .map((b) => b.bookNumber)
-        .join(', ');
       const classified = classifySevakBooks(sevak);
-      const submittedBooksText = classified.submittedBooks
-        .map((b) => b.bookNumber)
-        .join(', ');
-      const partialBooksText = classified.partialBooks
-        .map((b) => `${b.bookNumber} (${b.receiptCount}/10)`)
-        .join(', ');
-      const assignedBooksText = classified.assignedOnlyBooks
-        .map((b) => b.bookNumber)
-        .join(', ');
 
-      worksheet.addRow([
-        sevak.sevakCode,
-        sevak.fullName,
-        sevak.mobile,
-        sevak.altMobile ?? '',
-        sevak.whatsapp ?? '',
-        sevak.mandal,
-        sevak.kshetra,
-        sevak.assignedBooks.length,
-        allocatedBookNumbers,
-        submittedBooksText,
-        partialBooksText,
-        assignedBooksText,
-        sevak.expectedContacts,
-      ]);
+      const bookMap = new Map<
+        string,
+        { receiptCount: number; totalAmount: number; status: string }
+      >();
+      for (const book of classified.submittedBooks) {
+        bookMap.set(book.bookNumber, {
+          receiptCount: book.receiptCount,
+          totalAmount: book.totalAmount,
+          status: 'SUBMITTED',
+        });
+      }
+      for (const book of classified.partialBooks) {
+        bookMap.set(book.bookNumber, {
+          receiptCount: book.receiptCount,
+          totalAmount: book.totalAmount,
+          status: 'PARTIALLY_SUBMITTED',
+        });
+      }
+      for (const book of classified.assignedOnlyBooks) {
+        bookMap.set(book.bookNumber, {
+          receiptCount: 0,
+          totalAmount: 0,
+          status: 'ASSIGNED',
+        });
+      }
+
+      for (const book of sevak.assignedBooks) {
+        const info = bookMap.get(book.bookNumber) ?? {
+          receiptCount: 0,
+          totalAmount: 0,
+          status: 'ASSIGNED',
+        };
+        breakdown.addRow({
+          sevakCode: sevak.sevakCode,
+          fullName: sevak.fullName,
+          mobile: sevak.mobile,
+          mandal: sevak.mandal,
+          kshetra: sevak.kshetra,
+          bookNumber: book.bookNumber,
+          status: info.status,
+          completedReceipts: `${info.receiptCount} / 10`,
+          sahSevakName: book.sahSevakName ?? '-',
+          sahSevakMobile: book.sahSevakMobile ?? '-',
+          totalSevaAmount: toINR(info.totalAmount),
+        });
+      }
+
+      summary.addRow({
+        sevakCode: sevak.sevakCode,
+        fullName: sevak.fullName,
+        mobile: sevak.mobile,
+        mandal: sevak.mandal,
+        totalBooks: classified.totalAllocatedCount,
+        submittedBooks: classified.submittedCount,
+        partialBooks: classified.partialCount,
+        assignedBooks: classified.stillAssignedCount,
+        totalSevaAmount: classified.totalSevaAmount,
+      });
+    }
+
+    // Column alignment
+    const centerColumns = ['sevakCode', 'mobile', 'bookNumber', 'status', 'completedReceipts'];
+    for (const key of centerColumns) {
+      const col = breakdown.getColumn(key);
+      if (col) col.alignment = { horizontal: 'center' };
+    }
+    breakdown.getColumn('sahSevakMobile').alignment = { horizontal: 'center' };
+    breakdown.getColumn('totalSevaAmount').alignment = { horizontal: 'right' };
+    breakdown.getColumn('totalSevaAmount').numFmt = '₹#,##0.00';
+
+    summary.getColumn('sevakCode').alignment = { horizontal: 'center' };
+    summary.getColumn('mobile').alignment = { horizontal: 'center' };
+    for (const key of ['totalBooks', 'submittedBooks', 'partialBooks', 'assignedBooks', 'totalSevaAmount']) {
+      const col = summary.getColumn(key);
+      if (col) {
+        col.alignment = { horizontal: 'right' };
+      }
+    }
+    summary.getColumn('totalSevaAmount').numFmt = '₹#,##0.00';
+
+    // Thin gray borders for all populated cells
+    for (const worksheet of [breakdown, summary]) {
+      worksheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'D4D4D4' } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } },
+          };
+        });
+      });
     }
 
     res.setHeader(

@@ -46,6 +46,8 @@ export interface BookRecordSevak {
     bookNumber: string;
     receiptCount: number;
     totalAmount: number;
+    sahSevakName: string | null;
+    sahSevakMobile: string | null;
     receipts: Array<{
       id: string;
       bookNumber: string;
@@ -61,6 +63,8 @@ export interface BookRecordSevak {
     receiptCount: number;
     remainingCount: number;
     totalAmount: number;
+    sahSevakName: string | null;
+    sahSevakMobile: string | null;
     receipts: Array<{
       id: string;
       bookNumber: string;
@@ -74,6 +78,8 @@ export interface BookRecordSevak {
   assignedOnlyBooks: Array<{
     bookNumber: string;
     receiptCount: number;
+    sahSevakName: string | null;
+    sahSevakMobile: string | null;
   }>;
 }
 

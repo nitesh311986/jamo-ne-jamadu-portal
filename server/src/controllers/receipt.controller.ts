@@ -177,32 +177,79 @@ export async function createReceipts(
 export async function searchReceipts(req: Request, res: Response): Promise<void> {
   const { page, limit, skip, take } = parsePaginationParams(req.query);
 
-  const { bookNumber, receiptNo, donorName, donorMobile, sevakCode } = req.query;
+  const {
+    bookNumber,
+    receiptNo,
+    donorName,
+    donorMobile,
+    sevakCode,
+    sahSevakName,
+    sahSevakMobile,
+  } = req.query;
 
-  const where: Prisma.SevaReceiptWhereInput = {
-    ...(bookNumber
-      ? { bookNumber: { contains: String(bookNumber).trim(), mode: 'insensitive' as const } }
-      : {}),
-    ...(receiptNo
-      ? { receiptNo: { contains: String(receiptNo).trim(), mode: 'insensitive' as const } }
-      : {}),
-    ...(donorName
-      ? { donorName: { contains: String(donorName).trim(), mode: 'insensitive' as const } }
-      : {}),
-    ...(donorMobile
-      ? { donorMobile: { contains: String(donorMobile).trim() } }
-      : {}),
-    ...(sevakCode
-      ? {
-          sevak: {
-            sevakCode: {
-              contains: String(sevakCode).trim().toUpperCase(),
-              mode: 'insensitive' as const,
-            },
-          },
-        }
-      : {}),
-  };
+  const conditions: Prisma.SevaReceiptWhereInput[] = [];
+
+  if (bookNumber) {
+    conditions.push({
+      bookNumber: { contains: String(bookNumber).trim(), mode: 'insensitive' as const },
+    });
+  }
+  if (receiptNo) {
+    conditions.push({
+      receiptNo: { contains: String(receiptNo).trim(), mode: 'insensitive' as const },
+    });
+  }
+  if (donorName) {
+    conditions.push({
+      donorName: { contains: String(donorName).trim(), mode: 'insensitive' as const },
+    });
+  }
+  if (donorMobile) {
+    conditions.push({
+      donorMobile: { contains: String(donorMobile).trim() },
+    });
+  }
+  if (sevakCode) {
+    conditions.push({
+      sevak: {
+        sevakCode: {
+          contains: String(sevakCode).trim().toUpperCase(),
+          mode: 'insensitive' as const,
+        },
+      },
+    });
+  }
+
+  if (sahSevakName || sahSevakMobile) {
+    const allocWhere: Prisma.BookAllocationWhereInput = {};
+    if (sahSevakName) {
+      allocWhere.sahSevakName = {
+        contains: String(sahSevakName).trim(),
+        mode: 'insensitive' as const,
+      };
+    }
+    if (sahSevakMobile) {
+      allocWhere.sahSevakMobile = { contains: String(sahSevakMobile).trim() };
+    }
+    const allocations = await prisma.bookAllocation.findMany({
+      where: allocWhere,
+      select: { bookNumber: true },
+    });
+    const matchingBookNumbers = allocations.map((a) => a.bookNumber);
+    if (matchingBookNumbers.length === 0) {
+      res.status(200).json({
+        receipts: [],
+        total: 0,
+        page,
+        limit,
+      });
+      return;
+    }
+    conditions.push({ bookNumber: { in: matchingBookNumbers } });
+  }
+
+  const where: Prisma.SevaReceiptWhereInput =
+    conditions.length > 0 ? { AND: conditions } : {};
 
   try {
     const [total, receipts] = await prisma.$transaction([
@@ -218,9 +265,18 @@ export async function searchReceipts(req: Request, res: Response): Promise<void>
       }),
     ]);
 
+    const bookNumbers = [...new Set(receipts.map((r) => r.bookNumber))];
+    const allocations = await prisma.bookAllocation.findMany({
+      where: { bookNumber: { in: bookNumbers } },
+      select: { bookNumber: true, sahSevakName: true, sahSevakMobile: true },
+    });
+    const allocationMap = new Map(allocations.map((a) => [a.bookNumber, a]));
+
     const formatted = receipts.map((r) => ({
       ...r,
       amount: Number(r.amount),
+      sahSevakName: allocationMap.get(r.bookNumber)?.sahSevakName ?? null,
+      sahSevakMobile: allocationMap.get(r.bookNumber)?.sahSevakMobile ?? null,
     }));
 
     res.status(200).json({
@@ -298,61 +354,222 @@ function buildSummaryRows(
   return Object.values(groups).sort((a, b) => a.amount - b.amount);
 }
 
-export async function exportReceiptsExcel(_req: Request, res: Response): Promise<void> {
+export async function exportReceiptsExcel(req: Request, res: Response): Promise<void> {
   try {
+    const {
+      bookNumber,
+      receiptNo,
+      donorName,
+      donorMobile,
+      sevakCode,
+      sahSevakName,
+      sahSevakMobile,
+    } = req.query;
+
+    const conditions: Prisma.SevaReceiptWhereInput[] = [];
+
+    if (bookNumber) {
+      conditions.push({
+        bookNumber: { contains: String(bookNumber).trim(), mode: 'insensitive' as const },
+      });
+    }
+    if (receiptNo) {
+      conditions.push({
+        receiptNo: { contains: String(receiptNo).trim(), mode: 'insensitive' as const },
+      });
+    }
+    if (donorName) {
+      conditions.push({
+        donorName: { contains: String(donorName).trim(), mode: 'insensitive' as const },
+      });
+    }
+    if (donorMobile) {
+      conditions.push({
+        donorMobile: { contains: String(donorMobile).trim() },
+      });
+    }
+    if (sevakCode) {
+      conditions.push({
+        sevak: {
+          sevakCode: {
+            contains: String(sevakCode).trim().toUpperCase(),
+            mode: 'insensitive' as const,
+          },
+        },
+      });
+    }
+    if (sahSevakName || sahSevakMobile) {
+      const allocWhere: Prisma.BookAllocationWhereInput = {};
+      if (sahSevakName) {
+        allocWhere.sahSevakName = {
+          contains: String(sahSevakName).trim(),
+          mode: 'insensitive' as const,
+        };
+      }
+      if (sahSevakMobile) {
+        allocWhere.sahSevakMobile = { contains: String(sahSevakMobile).trim() };
+      }
+      const allocations = await prisma.bookAllocation.findMany({
+        where: allocWhere,
+        select: { bookNumber: true },
+      });
+      const matchingBookNumbers = allocations.map((a) => a.bookNumber);
+      if (matchingBookNumbers.length === 0) {
+        conditions.push({ id: { equals: '__no_match__' } });
+      } else {
+        conditions.push({ bookNumber: { in: matchingBookNumbers } });
+      }
+    }
+
+    const where: Prisma.SevaReceiptWhereInput =
+      conditions.length > 0 ? { AND: conditions } : {};
+
     const receipts = await prisma.sevaReceipt.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
-        sevak: { select: { sevakCode: true, fullName: true, mandal: true } },
+        sevak: {
+          select: { sevakCode: true, fullName: true, mobile: true, mandal: true },
+        },
       },
     });
 
-    const workbook = new ExcelJS.Workbook();
+    const bookNumbers = [...new Set(receipts.map((r) => r.bookNumber))];
+    const allocations = await prisma.bookAllocation.findMany({
+      where: { bookNumber: { in: bookNumbers } },
+      select: { bookNumber: true, sahSevakName: true, sahSevakMobile: true },
+    });
+    const allocationMap = new Map(allocations.map((a) => [a.bookNumber, a]));
 
+    const workbook = new ExcelJS.Workbook();
     const details = workbook.addWorksheet('Receipts');
     details.columns = [
-      { header: 'પ.ભ.શ્રી / Donor Name', key: 'donorName', width: 28 },
-      { header: 'મોબાઇલ / Mobile', key: 'donorMobile', width: 16 },
-      { header: 'બુક નં. / Book No', key: 'bookNumber', width: 14 },
-      { header: 'પહોંચ નં. / Receipt No', key: 'receiptNo', width: 14 },
-      { header: 'રકમ / Amount', key: 'amount', width: 14 },
-      { header: 'તારીખ / Entry Date', key: 'entryDate', width: 22 },
-      { header: 'સેવક કોડ / Sevak Code', key: 'sevakCode', width: 16 },
-      { header: 'સેવક નામ / Sevak Name', key: 'sevakName', width: 28 },
-      { header: 'મંડળ / Mandal', key: 'mandal', width: 20 },
+      { key: 'bookNumber', width: 14 },
+      { key: 'receiptNo', width: 14 },
+      { key: 'donorName', width: 28 },
+      { key: 'donorMobile', width: 16 },
+      { key: 'amount', width: 14 },
+      { key: 'sevakCode', width: 16 },
+      { key: 'sevakFullName', width: 28 },
+      { key: 'sahSevakName', width: 24 },
+      { key: 'sahSevakMobile', width: 16 },
+      { key: 'entryDate', width: 16 },
     ];
 
+    const headerRow = details.addRow([
+      'Book No',
+      'Receipt No',
+      'Donor Name',
+      'Donor Mobile',
+      'Amount',
+      'Sevak Code',
+      'Sevak Full Name',
+      'Sah-Sevak Name',
+      'Sah-Sevak Mobile',
+      'Date',
+    ]);
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'D97706' },
+      } as ExcelJS.Fill;
+      cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'D4D4D4' } },
+        left: { style: 'thin', color: { argb: 'D4D4D4' } },
+        bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+        right: { style: 'thin', color: { argb: 'D4D4D4' } },
+      };
+    });
+    headerRow.height = 28;
+
     details.addRows(
-      receipts.map((r) => ({
-        donorName: r.donorName,
-        donorMobile: r.donorMobile ?? '',
-        bookNumber: r.bookNumber,
-        receiptNo: r.receiptNo,
-        amount: Number(r.amount),
-        entryDate: r.entryDate.toISOString(),
-        sevakCode: r.sevak.sevakCode,
-        sevakName: r.sevak.fullName,
-        mandal: r.sevak.mandal,
-      }))
+      receipts.map((r) => {
+        const bookAlloc = allocationMap.get(r.bookNumber);
+        return {
+          bookNumber: r.bookNumber,
+          receiptNo: r.receiptNo,
+          donorName: r.donorName ?? '-',
+          donorMobile: r.donorMobile ?? '-',
+          amount: Number(r.amount),
+          sevakCode: r.sevak.sevakCode,
+          sevakFullName: r.sevak.fullName,
+          sahSevakName: bookAlloc?.sahSevakName ?? '-',
+          sahSevakMobile: bookAlloc?.sahSevakMobile ?? '-',
+          entryDate: new Date(r.entryDate),
+        };
+      })
     );
+
+    details.getColumn('bookNumber').alignment = { horizontal: 'center' };
+    details.getColumn('receiptNo').alignment = { horizontal: 'center' };
+    details.getColumn('sevakCode').alignment = { horizontal: 'center' };
+    details.getColumn('donorMobile').alignment = { horizontal: 'center' };
+    details.getColumn('sahSevakMobile').alignment = { horizontal: 'center' };
+    details.getColumn('amount').alignment = { horizontal: 'right' };
+    details.getColumn('amount').numFmt = '₹#,##0.00';
+    details.getColumn('entryDate').numFmt = 'dd/mm/yyyy';
+    details.getColumn('entryDate').alignment = { horizontal: 'center' };
+
+    details.eachRow((row) => {
+      row.eachCell((cell) => {
+        if (!cell.border) {
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'D4D4D4' } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } },
+          };
+        }
+      });
+    });
 
     const summary = workbook.addWorksheet('Summary');
     summary.columns = [
-      { header: 'રકમ / Amount', key: 'amount', width: 16 },
-      { header: 'કુલ / Count', key: 'count', width: 12 },
-      { header: 'પેટાસરવાડો / Sub-total', key: 'subTotal', width: 18 },
+      { key: 'amount', width: 16 },
+      { key: 'count', width: 12 },
+      { key: 'subTotal', width: 18 },
     ];
+
+    const summaryHeaders = summary.addRow(['Amount', 'Count', 'Sub-total']);
+    summaryHeaders.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'D97706' },
+      } as ExcelJS.Fill;
+      cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'D4D4D4' } },
+        left: { style: 'thin', color: { argb: 'D4D4D4' } },
+        bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+        right: { style: 'thin', color: { argb: 'D4D4D4' } },
+      };
+    });
+    summaryHeaders.height = 28;
 
     const summaryRows = buildSummaryRows(receipts);
     const grandTotal = summaryRows.reduce((sum, g) => sum + g.subTotal, 0);
     const totalCount = summaryRows.reduce((sum, g) => sum + g.count, 0);
 
     summary.addRows(summaryRows);
-    summary.addRow({
-      amount: 'કુલ/Grand Total',
+    const grandTotalRow = summary.addRow({
+      amount: 'Grand Total',
       count: totalCount,
       subTotal: grandTotal,
     });
+    grandTotalRow.eachCell((cell) => {
+      cell.font = { bold: true };
+    });
+
+    summary.getColumn('amount').alignment = { horizontal: 'right' };
+    summary.getColumn('count').alignment = { horizontal: 'right' };
+    summary.getColumn('subTotal').alignment = { horizontal: 'right' };
+    summary.getColumn('amount').numFmt = '₹#,##0.00';
+    summary.getColumn('subTotal').numFmt = '₹#,##0.00';
 
     res.setHeader(
       'Content-Type',
@@ -1050,13 +1267,15 @@ interface BookBulkSyncBody {
   sevakId: string;
   bookNumber: string;
   receipts: BookBulkSyncReceiptItem[];
+  sahSevakName?: string;
+  sahSevakMobile?: string;
 }
 
 export async function bulkSyncBookReceipts(
   req: Request<Record<string, never>, unknown, BookBulkSyncBody>,
   res: Response
 ): Promise<void> {
-  const { sevakId, bookNumber } = req.body;
+  const { sevakId, bookNumber, sahSevakName, sahSevakMobile } = req.body;
   const receipts = Array.isArray(req.body.receipts) ? req.body.receipts : [];
 
   if (!sevakId?.trim()) {
@@ -1205,6 +1424,20 @@ export async function bulkSyncBookReceipts(
     });
 
     await updateBookStatusForBook(trimmedBookNumber);
+
+    const allocationData: Prisma.BookAllocationUpdateManyMutationInput = {};
+    if (sahSevakName !== undefined) {
+      allocationData.sahSevakName = sahSevakName.trim() || null;
+    }
+    if (sahSevakMobile !== undefined) {
+      allocationData.sahSevakMobile = sahSevakMobile.trim() || null;
+    }
+    if (Object.keys(allocationData).length > 0) {
+      await prisma.bookAllocation.updateMany({
+        where: { bookNumber: trimmedBookNumber },
+        data: allocationData,
+      });
+    }
 
     const actorId = req.user?.userId ?? 'unknown';
     await logAuditEvent(actorId, 'RECEIPTS_BULK_SYNC', {

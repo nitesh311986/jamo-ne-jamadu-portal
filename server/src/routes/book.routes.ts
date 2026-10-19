@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth.middleware';
 import {
   batchAssignBooks,
   deleteBook,
+  getBookByNumber,
   getBooksBySevak,
   updateBook,
 } from '../controllers/book.controller';
@@ -10,6 +11,7 @@ import {
 const router: Router = Router();
 
 router.get('/sevak/:sevakId', authenticateToken, getBooksBySevak);
+router.get('/:bookNumber', authenticateToken, getBookByNumber);
 router.post('/batch-assign', authenticateToken, batchAssignBooks);
 router.put('/:bookId', authenticateToken, updateBook);
 router.delete('/:bookId', authenticateToken, deleteBook);
