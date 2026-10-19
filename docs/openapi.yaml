@@ -319,6 +319,85 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /sevaks/book-records:
+    get:
+      summary: Get paginated sevak book records with allocation aggregates
+      operationId: getSevakBookRecords
+      tags:
+        - Sevaks
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: mandal
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+            enum:
+              - 10
+              - 20
+              - 50
+      responses:
+        '200':
+          description: Paginated sevak book records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SevakBookRecordsResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sevaks/export/book-records:
+    get:
+      summary: Download sevak book records as a formatted Excel file
+      operationId: exportSevakBookRecords
+      tags:
+        - Sevaks
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: mandal
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Excel file download
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '429':
+          description: Too many requests from this IP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /sevaks/{id}:
     put:
       summary: Update a sevak
@@ -2010,6 +2089,148 @@ components:
           type: integer
         amount:
           type: number
+
+    SevakBookRecord:
+      allOf:
+        - $ref: '#/components/schemas/Sevak'
+        - type: object
+          required:
+            - totalAllocatedCount
+            - submittedCount
+            - partialCount
+            - stillAssignedCount
+            - totalSevaAmount
+            - submittedBooks
+            - partialBooks
+            - assignedOnlyBooks
+          properties:
+            totalAllocatedCount:
+              type: integer
+              minimum: 0
+            submittedCount:
+              type: integer
+              minimum: 0
+            partialCount:
+              type: integer
+              minimum: 0
+            stillAssignedCount:
+              type: integer
+              minimum: 0
+            totalSevaAmount:
+              type: number
+              minimum: 0
+            submittedBooks:
+              type: array
+              items:
+                type: object
+                required:
+                  - bookNumber
+                  - receiptCount
+                  - totalAmount
+                  - receipts
+                properties:
+                  bookNumber:
+                    type: string
+                  receiptCount:
+                    type: integer
+                  totalAmount:
+                    type: number
+                  receipts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SevakBookReceiptSummary'
+            partialBooks:
+              type: array
+              items:
+                type: object
+                required:
+                  - bookNumber
+                  - receiptCount
+                  - remainingCount
+                  - totalAmount
+                  - receipts
+                properties:
+                  bookNumber:
+                    type: string
+                  receiptCount:
+                    type: integer
+                  remainingCount:
+                    type: integer
+                  totalAmount:
+                    type: number
+                  receipts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SevakBookReceiptSummary'
+            assignedOnlyBooks:
+              type: array
+              items:
+                type: object
+                required:
+                  - bookNumber
+                  - receiptCount
+                properties:
+                  bookNumber:
+                    type: string
+                  receiptCount:
+                    type: integer
+
+    SevakBookReceiptSummary:
+      type: object
+      required:
+        - id
+        - bookNumber
+        - receiptNo
+        - donorName
+        - donorMobile
+        - amount
+        - entryDate
+      properties:
+        id:
+          type: string
+        bookNumber:
+          type: string
+        receiptNo:
+          type: string
+        donorName:
+          type: string
+        donorMobile:
+          type: string
+        amount:
+          type: number
+        entryDate:
+          type: string
+          format: date-time
+
+    SevakBookRecordsResponse:
+      type: object
+      required:
+        - success
+        - data
+        - pagination
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SevakBookRecord'
+        pagination:
+          type: object
+          required:
+            - totalCount
+            - totalPages
+            - currentPage
+            - pageSize
+          properties:
+            totalCount:
+              type: integer
+            totalPages:
+              type: integer
+            currentPage:
+              type: integer
+            pageSize:
+              type: integer
 
     Error:
       type: object
