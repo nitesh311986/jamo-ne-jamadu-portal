@@ -64,6 +64,9 @@ export default function ReceiptEntry(): ReactElement {
   const [savedSummary, setSavedSummary] = useState<ReceiptSummaryResponse | null>(null);
   const [bookRows, setBookRows] = useState<Record<string, ReceiptDraftRow[]>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [sahSevak, setSahSevak] = useState<
+    Record<string, { name: string; mobile: string }>
+  >({});
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
@@ -191,6 +194,17 @@ export default function ReceiptEntry(): ReactElement {
     const bookNumber = e.target.value;
     if (!bookNumber || !selectedSevak) return;
 
+    const currentBook = books.find((b) => b.bookNumber === bookNumber);
+    if (currentBook) {
+      setSahSevak((prev) => ({
+        ...prev,
+        [bookNumber]: {
+          name: currentBook.sahSevakName ?? '',
+          mobile: currentBook.sahSevakMobile ?? '',
+        },
+      }));
+    }
+
     if (!bookRows[bookNumber]) {
       void loadBookReceipts(bookNumber);
     } else {
@@ -214,6 +228,17 @@ export default function ReceiptEntry(): ReactElement {
 
       return { ...prev, [bookNumber]: next };
     });
+  };
+
+  const updateSahSevak = (
+    bookNumber: string,
+    field: 'name' | 'mobile',
+    value: string
+  ): void => {
+    setSahSevak((prev) => ({
+      ...prev,
+      [bookNumber]: { ...prev[bookNumber], [field]: value },
+    }));
   };
 
   const duplicateIds = useMemo(() => {
@@ -347,6 +372,8 @@ export default function ReceiptEntry(): ReactElement {
         sevakId: selectedSevak.id,
         bookNumber,
         receipts: result.payload,
+        sahSevakName: sahSevak[bookNumber]?.name,
+        sahSevakMobile: sahSevak[bookNumber]?.mobile,
       });
 
       if (data.success) {
@@ -403,6 +430,8 @@ export default function ReceiptEntry(): ReactElement {
         sevakId: selectedSevak.id,
         bookNumber,
         receipts: result.payload,
+        sahSevakName: sahSevak[bookNumber]?.name,
+        sahSevakMobile: sahSevak[bookNumber]?.mobile,
       });
 
       if (data.success) {
@@ -447,6 +476,9 @@ export default function ReceiptEntry(): ReactElement {
           <div className="flex flex-wrap items-center gap-2">
             <BookOpen size={18} className="text-orange-600" />
             <span className="font-semibold text-slate-800">Book {bookNumber}</span>
+            <span className="text-xs text-slate-600">
+              Sah-Sevak: {sahSevak[bookNumber]?.name || 'None'}
+            </span>
             <span className="text-sm text-slate-500">
               {completed
                 ? '10/10 Receipts Completed'
@@ -468,6 +500,35 @@ export default function ReceiptEntry(): ReactElement {
 
         {isExpanded && (
           <div className="p-4">
+            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">
+                  Sah-Sevak Name (Optional) / સહ-સેવક નામ
+                </label>
+                <input
+                  type="text"
+                  value={sahSevak[bookNumber]?.name ?? ''}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    updateSahSevak(bookNumber, 'name', e.target.value)
+                  }
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">
+                  Sah-Sevak Mobile (Optional) / સહ-સેવક મોબાઇલ
+                </label>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={sahSevak[bookNumber]?.mobile ?? ''}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    updateSahSevak(bookNumber, 'mobile', normalizeMobile(e.target.value))
+                  }
+                  className={inputClass}
+                />
+              </div>
+            </div>
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-100 text-slate-600">
                 <tr>

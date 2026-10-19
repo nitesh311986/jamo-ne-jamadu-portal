@@ -18,6 +18,12 @@ export default function ReceiptSearch(): ReactElement {
   const [donorName, setDonorName] = useState<string>('');
   const [donorMobile, setDonorMobile] = useState<string>('');
   const [sevakCode, setSevakCode] = useState<string>(searchParams.get('sevakCode') ?? '');
+  const [sahSevakName, setSahSevakName] = useState<string>(
+    searchParams.get('sahSevakName') ?? ''
+  );
+  const [sahSevakMobile, setSahSevakMobile] = useState<string>(
+    searchParams.get('sahSevakMobile') ?? ''
+  );
 
   const parsePageFromUrl = (value: string | null): number => {
     const parsed = parseInt(value ?? '1', 10);
@@ -42,6 +48,8 @@ export default function ReceiptSearch(): ReactElement {
   const [debouncedName, setDebouncedName] = useState<string>('');
   const [debouncedMobile, setDebouncedMobile] = useState<string>('');
   const [debouncedSevak, setDebouncedSevak] = useState<string>('');
+  const [debouncedSahName, setDebouncedSahName] = useState<string>('');
+  const [debouncedSahMobile, setDebouncedSahMobile] = useState<string>('');
 
   const isInitialFilter = useRef(true);
 
@@ -54,10 +62,12 @@ export default function ReceiptSearch(): ReactElement {
       setDebouncedName(donorName.trim());
       setDebouncedMobile(donorMobile.trim());
       setDebouncedSevak(sevakCode.trim());
+      setDebouncedSahName(sahSevakName.trim());
+      setDebouncedSahMobile(sahSevakMobile.trim());
       if (!isFirst) setPage(1);
     }, 300);
     return () => clearTimeout(timer);
-  }, [bookNumber, receiptNo, donorName, donorMobile, sevakCode]);
+  }, [bookNumber, receiptNo, donorName, donorMobile, sevakCode, sahSevakName, sahSevakMobile]);
 
   useEffect(() => {
     async function load(): Promise<void> {
@@ -70,6 +80,8 @@ export default function ReceiptSearch(): ReactElement {
         if (debouncedName) params.donorName = debouncedName;
         if (debouncedMobile) params.donorMobile = debouncedMobile;
         if (debouncedSevak) params.sevakCode = debouncedSevak;
+        if (debouncedSahName) params.sahSevakName = debouncedSahName;
+        if (debouncedSahMobile) params.sahSevakMobile = debouncedSahMobile;
 
         const { data } = await api.get<ReceiptSearchResponse>('/api/v1/receipts/search', {
           params,
@@ -85,7 +97,7 @@ export default function ReceiptSearch(): ReactElement {
       }
     }
     void load();
-  }, [debouncedBook, debouncedReceipt, debouncedName, debouncedMobile, debouncedSevak, page, pageSize]);
+  }, [debouncedBook, debouncedReceipt, debouncedName, debouncedMobile, debouncedSevak, debouncedSahName, debouncedSahMobile, page, pageSize]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -94,6 +106,8 @@ export default function ReceiptSearch(): ReactElement {
     if (debouncedName) params.set('donorName', debouncedName);
     if (debouncedMobile) params.set('donorMobile', debouncedMobile);
     if (debouncedSevak) params.set('sevakCode', debouncedSevak);
+    if (debouncedSahName) params.set('sahSevakName', debouncedSahName);
+    if (debouncedSahMobile) params.set('sahSevakMobile', debouncedSahMobile);
     params.set('page', String(page));
     params.set('limit', String(pageSize));
     setSearchParams(params, { replace: true });
@@ -103,6 +117,8 @@ export default function ReceiptSearch(): ReactElement {
     debouncedName,
     debouncedMobile,
     debouncedSevak,
+    debouncedSahName,
+    debouncedSahMobile,
     page,
     pageSize,
     setSearchParams,
@@ -111,8 +127,18 @@ export default function ReceiptSearch(): ReactElement {
   const handleDownload = async (): Promise<void> => {
     setIsExporting(true);
     try {
+      const params: Record<string, string> = {};
+      if (bookNumber.trim()) params.bookNumber = bookNumber.trim();
+      if (receiptNo.trim()) params.receiptNo = receiptNo.trim();
+      if (donorName.trim()) params.donorName = donorName.trim();
+      if (donorMobile.trim()) params.donorMobile = donorMobile.trim();
+      if (sevakCode.trim()) params.sevakCode = sevakCode.trim().toUpperCase();
+      if (sahSevakName.trim()) params.sahSevakName = sahSevakName.trim();
+      if (sahSevakMobile.trim()) params.sahSevakMobile = sahSevakMobile.trim();
+
       const response = await api.get('/api/v1/receipts/export/excel', {
         responseType: 'blob',
+        params,
       });
       const blob = new Blob([response.data as BlobPart], {
         type: String(
@@ -174,7 +200,7 @@ export default function ReceiptSearch(): ReactElement {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-7">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
@@ -225,6 +251,26 @@ export default function ReceiptSearch(): ReactElement {
             className={`${inputClass} pl-9 uppercase`}
           />
         </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            value={sahSevakName}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setSahSevakName(e.target.value)}
+            placeholder="Sah-Sevak Name"
+            className={`${inputClass} pl-9`}
+          />
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            value={sahSevakMobile}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setSahSevakMobile(e.target.value)}
+            placeholder="Sah-Sevak Mobile"
+            className={`${inputClass} pl-9`}
+          />
+        </div>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
@@ -249,6 +295,7 @@ export default function ReceiptSearch(): ReactElement {
                   <th className="px-4 py-3 font-medium">Mobile</th>
                   <th className="px-4 py-3 font-medium">Amount</th>
                   <th className="px-4 py-3 font-medium">Sevak Code</th>
+                  <th className="px-4 py-3 font-medium">Sah-Sevak</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -269,6 +316,11 @@ export default function ReceiptSearch(): ReactElement {
                       >
                         {receipt.sevak?.sevakCode ?? '-'}
                       </button>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {receipt.sahSevakName
+                        ? `${receipt.sahSevakName}${receipt.sahSevakMobile ? ` (${receipt.sahSevakMobile})` : ''}`
+                        : '-'}
                     </td>
                   </tr>
                 ))}
@@ -291,6 +343,11 @@ export default function ReceiptSearch(): ReactElement {
                   Book {receipt.bookNumber} / Receipt {receipt.receiptNo}
                 </div>
                 <div className="text-sm text-slate-500">{receipt.donorMobile ?? '-'}</div>
+                <div className="text-sm text-slate-500">
+                  Sah-Sevak: {receipt.sahSevakName
+                    ? `${receipt.sahSevakName}${receipt.sahSevakMobile ? ` (${receipt.sahSevakMobile})` : ''}`
+                    : '-'}
+                </div>
               </div>
             ))}
           </div>

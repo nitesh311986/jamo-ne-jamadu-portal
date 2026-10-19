@@ -57,6 +57,29 @@ export async function getBooksBySevak(
   }
 }
 
+export async function getBookByNumber(
+  req: Request<{ bookNumber: string }>,
+  res: Response
+): Promise<void> {
+  const bookNumber = cleanBookNumber(req.params.bookNumber);
+
+  try {
+    const book = await prisma.bookAllocation.findUnique({
+      where: { bookNumber },
+    });
+
+    if (!book) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+
+    res.status(200).json({ book });
+  } catch (err) {
+    logger.error('Get book by number error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 export async function batchAssignBooks(
   req: Request<Record<string, never>, unknown, BatchAssignBody>,
   res: Response

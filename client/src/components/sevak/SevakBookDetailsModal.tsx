@@ -7,7 +7,8 @@ import {
   ChevronUp,
   Clock,
   MapPin,
-  Phone,  
+  Phone,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { useEffect, useState, type ReactElement } from 'react';
@@ -26,6 +27,8 @@ interface SubmittedBook {
   bookNumber: string;
   receiptCount: number;
   totalAmount: number;
+  sahSevakName: string | null;
+  sahSevakMobile: string | null;
   receipts: Receipt[];
 }
 
@@ -34,12 +37,16 @@ interface PartialBook {
   receiptCount: number;
   remainingCount: number;
   totalAmount: number;
+  sahSevakName: string | null;
+  sahSevakMobile: string | null;
   receipts: Receipt[];
 }
 
 interface AssignedOnlyBook {
   bookNumber: string;
   receiptCount: number;
+  sahSevakName: string | null;
+  sahSevakMobile: string | null;
 }
 
 interface DetailedSevak {
@@ -115,6 +122,14 @@ function SubmittedBookCard({ book }: { book: SubmittedBook }): ReactElement {
             <div className="text-xs text-emerald-700">
               {book.receiptCount} / 10 receipts completed
             </div>
+            {book.sahSevakName && (
+              <div className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                Sah-Sevak:{' '}
+                <span className="font-medium text-gray-800">{book.sahSevakName}</span>{' '}
+                ({book.sahSevakMobile || 'No Mobile'})
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -176,6 +191,14 @@ function PartialBookCard({ book }: { book: PartialBook }): ReactElement {
             <div className="text-xs text-amber-700">
               {book.receiptCount} / 10 receipts entered
             </div>
+            {book.sahSevakName && (
+              <div className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                Sah-Sevak:{' '}
+                <span className="font-medium text-gray-800">{book.sahSevakName}</span>{' '}
+                ({book.sahSevakMobile || 'No Mobile'})
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -409,10 +432,20 @@ export default function SevakBookDetailsModal({
                   {sevak.assignedOnlyBooks.map((book) => (
                     <div
                       key={book.bookNumber}
-                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm"
+                      className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm"
                     >
-                      <BookOpen size={16} className="text-slate-400" />
-                      Book {book.bookNumber}
+                      <div className="flex items-center gap-2">
+                        <BookOpen size={16} className="text-slate-400" />
+                        Book {book.bookNumber}
+                      </div>
+                      {book.sahSevakName && (
+                        <div className="text-xs text-gray-600 flex items-center gap-1">
+                          <UserCheck className="w-3.5 h-3.5 text-amber-600" />
+                          Sah-Sevak:{' '}
+                          <span className="font-medium text-gray-800">{book.sahSevakName}</span>{' '}
+                          ({book.sahSevakMobile || 'No Mobile'})
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
