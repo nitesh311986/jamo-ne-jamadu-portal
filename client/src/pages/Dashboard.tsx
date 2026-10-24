@@ -93,7 +93,7 @@ export default function Dashboard(): ReactElement {
     { label: 'Register Sevak', to: '/sevaks/register', icon: UserPlus, color: 'bg-emerald-50 text-emerald-600' },
     { label: 'Allocate Books', to: '/books/allocate', icon: BookOpen, color: 'bg-blue-50 text-blue-600' },
     { label: 'Book Collection', to: '/receipts/entry', icon: Receipt, color: 'bg-amber-50 text-amber-600' },
-    { label: 'Prasad Counter', to: '/prasad', icon: Package, color: 'bg-purple-50 text-purple-600' },
+    { label: 'Prasad Counter', to: '/prasad/counter', icon: Package, color: 'bg-purple-50 text-purple-600' },
   ];
 
   const kpiCards: KpiCardProps[] = [

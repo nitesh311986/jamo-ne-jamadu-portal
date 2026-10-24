@@ -118,16 +118,35 @@ model SevaReceipt {
 }
 
 model PrasadDistribution {
-  id                  String   @id @default(uuid())
-  sevakId             String
-  sevak               Sevak    @relation(fields: [sevakId], references: [id], onDelete: Cascade)
-  slabTier            String   // '<500', '500-999', '1000-1999', etc.
-  eligibleBoxes       Int      @default(0)
-  distributedBoxes    Int      @default(0)
-  totalReceiptsCount  Int      @default(0)
-  servedReceiptsCount Int      @default(0)
-  updatedAt           DateTime @updatedAt
+  id                    String    @id @default(uuid())
+  sevakId               String
+  sevak                 Sevak     @relation(fields: [sevakId], references: [id], onDelete: Cascade)
+  bookNumber            String?   // Track per book allocation (e.g. "1", "2")
+  
+  // Eligible item quantities (calculated from receipts in book)
+  eligibleSmall         Int       @default(0) // Small Box
+  eligibleBig           Int       @default(0) // Big Box
+  eligibleBiscuit       Int       @default(0) // Biscuit Box
+  eligibleChocolate     Int       @default(0) // Chocolate Box
 
-  @@unique([sevakId, slabTier])
+  // Actually distributed physical quantities
+  distributedSmall      Int       @default(0) // Small Box
+  distributedBig        Int       @default(0) // Big Box
+  distributedBiscuit    Int       @default(0) // Biscuit Box
+  distributedChocolate  Int       @default(0) // Chocolate Box
+
+  // Third-Party / Representative Collector Tracking
+  collectedByName       String?   // Name of person picking up (Sevak, Sah-Sevak, or other representative)
+  collectedByMobile     String?   // Mobile of person picking up
+
+  distributedAt         DateTime?
+  distributedBy         String?   // Volunteer user who operated desk
+  notes                 String?
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([sevakId, bookNumber])
   @@index([sevakId])
+  @@index([bookNumber])
+  @@index([collectedByName])
+  @@index([collectedByMobile])
 }

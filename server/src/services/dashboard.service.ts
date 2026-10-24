@@ -1,4 +1,4 @@
-import { classifyTier } from './prasad.service';
+import { classifySlabLabel, computePrasadItems } from './prasad.service';
 import prisma from '../lib/prisma';
 
 export interface ActivityItem {
@@ -66,7 +66,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalPartiallySubmittedBooks,
     totalSevaAmountAgg,
     totalReceiptsCount,
-    totalBoxesEligibleAgg,
     totalBoxesDistributedAgg,
     recentReceipts,
     allReceipts,
@@ -77,8 +76,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.bookAllocation.count({ where: { status: 'PARTIALLY_SUBMITTED' } }),
     prisma.sevaReceipt.aggregate({ _sum: { amount: true } }),
     prisma.sevaReceipt.count(),
-    prisma.prasadDistribution.aggregate({ _sum: { eligibleBoxes: true } }),
-    prisma.prasadDistribution.aggregate({ _sum: { distributedBoxes: true } }),
+    prisma.prasadDistribution.aggregate({
+      _sum: {
+        distributedSmall: true,
+        distributedBig: true,
+        distributedBiscuit: true,
+        distributedChocolate: true,
+      },
+    }),
     prisma.sevaReceipt.findMany({
       take: 8,
       orderBy: { createdAt: 'desc' },
@@ -105,8 +110,19 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   const totalSevaAmount = toNumber(totalSevaAmountAgg._sum.amount);
   const pendingBooks = totalAllocatedBooks - (totalSubmittedBooks + totalPartiallySubmittedBooks);
-  const totalEligibleBoxes = totalBoxesEligibleAgg._sum.eligibleBoxes ?? 0;
-  const totalDistributedBoxes = totalBoxesDistributedAgg._sum.distributedBoxes ?? 0;
+
+  let totalEligibleBoxes = 0;
+  for (const receipt of allReceipts) {
+    const items = computePrasadItems(toNumber(receipt.amount));
+    totalEligibleBoxes += items.small + items.big + items.biscuit + items.chocolate;
+  }
+
+  const distSum = totalBoxesDistributedAgg._sum;
+  const totalDistributedBoxes =
+    (distSum.distributedSmall ?? 0) +
+    (distSum.distributedBig ?? 0) +
+    (distSum.distributedBiscuit ?? 0) +
+    (distSum.distributedChocolate ?? 0);
 
   const monthlyMap = new Map<string, { label: string; count: number; amount: number }>();
   const monthlyKeys: string[] = [];
@@ -131,11 +147,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const denominationMap = new Map<string, DenominationBreakdown>();
   for (const receipt of allReceipts) {
     const amount = toNumber(receipt.amount);
-    const tier = classifyTier(amount);
-    const existing = denominationMap.get(tier.label) ?? { tier: tier.label, count: 0, amount: 0 };
+    const label = classifySlabLabel(amount);
+    const existing = denominationMap.get(label) ?? { tier: label, count: 0, amount: 0 };
     existing.count += 1;
     existing.amount += amount;
-    denominationMap.set(tier.label, existing);
+    denominationMap.set(label, existing);
   }
 
   const denominationBreakdown: DenominationBreakdown[] = Array.from(denominationMap.values()).sort(

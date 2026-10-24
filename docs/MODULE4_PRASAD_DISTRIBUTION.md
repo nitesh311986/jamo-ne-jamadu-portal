@@ -1,108 +1,99 @@
-# Module 4 — Prasad Distribution Counter
+# Module 4 — Prasad Vitran (Distribution) Counter
 
-This document describes the live real-time inventory, eligibility, and master reporting module for the BAPS Anand Jamo Ne Jamadu Seva Portal.
+This document describes the live book-level prasad eligibility and distribution module for the BAPS Anand Jamo Ne Jamadu Seva Portal.
 
 ## 1. Volunteer Counter SOP
 
-### Step 1 — Identify the Sevak
-1. Open **Prasad Counter** from the left navigation menu.
-2. Search by **Sevak Code**, **Mobile**, or **Full Name**.
-3. Select the sevak. The header card and live statistics banner appear.
+### Step 1 — Find the Book
+1. Open **Prasad Counter / પ્રસાદ વિતરણ કાઉન્ટર** from the left navigation menu.
+2. Use the live search to match sevak code, name, mobile, sah-sevak name/mobile, or book number. Optionally filter by **Mandal**.
+3. Use the quick tabs to show **All**, **Pending (બાકી)**, or **Completed (પૂર્ણ)** books.
 
-### Step 2 — Verify Live Metrics
-The banner shows four key metrics updated in real time:
-- **Total Seva** collected by the sevak.
-- **Receipts** — served / total, with the count of unserved receipts.
-- **Books** — completed / total, with pending books.
-- **Boxes** — already distributed / eligible, with boxes pending to issue.
+### Step 2 — Review Desk Totals
+Four summary cards at the top show desk-wide totals for each item:
+- **Small Box**, **Big Box**, **Biscuit Box**, **Chocolate Box**
+- Each card shows Eligible / Given / Remaining across all filtered rows.
 
-### Step 3 — Review Slab-wise Eligibility
-Scroll through the slab cards. Each card displays:
-- Tier label (e.g., ₹500 - ₹999)
-- Total and unserved receipt counts
-- Eligible, already given, and remaining box counts
+### Step 3 — Review the Book Row
+Every allocated book is one row showing:
+- Sevak code badge, full name, mobile, mandal/kshetra.
+- Book number badge, receipt count, and Sah-Sevak name/mobile (or "None").
+- One badge per item: `Eligible: X | Given: Y | Rem: Z`.
+- **Collected By** — the representative who last picked up prasad for that book.
+- Status badge: emerald **Completed** (all remaining = 0) or amber **Pending**.
 
-If any boxes remain for a tier, enter the number to hand over in the **Issue Now** field. The input is validated immediately: a red border appears if you enter more than the remaining boxes.
+### Step 4 — Distribute
+Tap **Distribute / આપો** on a pending row. In the modal:
+- Fill **Collected By Name** — quick-fill with [Use Sevak Name] or [Use Sah-Sevak Name], or type a custom representative name.
+- Fill **Collected By Mobile** (10 digits).
+- Use the per-item steppers (capped at remaining), or **Fill All Remaining / બધું બાકી આપો**.
+- Optionally add notes, then **Confirm & Save**.
 
-### Step 4 — Select Receipts to Serve
-Expand a book under **Receipts & Books to Hand Over**.
-- Already-served receipts show a green **Served** badge and cannot be re-selected.
-- Use the checkbox next to an unserved receipt to mark it.
-- Use **Select All Unserved** to select every unserved receipt in that book.
+The grid refreshes immediately and the row flips to Completed when nothing remains.
 
-### Step 5 — Confirm and Hand Over
-Tap **Confirm & Hand Over Prasad**. The confirmation modal shows:
-- Sevak name and code
-- Total boxes being handed over in this batch
-- Number of receipts to mark as served
-- Remaining boxes left for next pickup
+## 2. Slab Eligibility Rules (Mandir Rules)
 
-After confirmation, the system records the distribution atomically and refreshes the live metrics instantly.
+Eligibility is computed **per receipt**, then summed per book.
 
-## 2. Tier Eligibility Algorithm
-
-| Tier | Slab | Allocation Rule |
-|------|------|-----------------|
-| LT_500 | < ₹500 | 1 box per unique qualifying amount group. Multiple receipts of the same amount share one box. |
-| GTE_500_LT_1000 | ₹500 - ₹999 | 1 box per receipt. |
-| GTE_1000_LT_2000 | ₹1,000 - ₹1,999 | 1 box per receipt (standard configuration). |
-| GTE_2000_LT_5000 | ₹2,000 - ₹4,999 | 1 box per receipt. |
-| GTE_5000_LT_10000 | ₹5,000 - ₹9,999 | 1 box per receipt. |
-| GTE_10000_LT_25000 | ₹10,000 - ₹24,999 | 1 box per receipt. |
-| GTE_25000_LT_50000 | ₹25,000 - ₹49,999 | 1 box per receipt. |
-| GTE_50000 | ≥ ₹50,000 | 1 box per receipt (default VIP allocation). |
+| Slab | Receipt Amount | Prasad Items |
+|------|----------------|--------------|
+| 1 | ₹1 – ₹499 | 1 Small Box |
+| 2 | ₹500 – ₹1,000 | 1 Big Box |
+| 3 | ₹1,001 – ₹4,999 | 1 Big Box + 1 Biscuit Box |
+| 4 | ₹5,000+ | 1 Big Box + 1 Chocolate Box + 1 Biscuit Box |
 
 ### Formulas
-- **Total Eligible Boxes** per tier:
-  - Tier 1: `COUNT(DISTINCT amount)` within the slab.
-  - Other tiers: `COUNT(receipts)` within the slab.
-- **Remaining Boxes** per tier: `eligibleBoxes - distributedBoxes`.
-- **Grand Total Eligible**: `SUM(eligibleBoxes across all tiers)`.
-- **Grand Total Pending**: `eligibleBoxes - distributedBoxes` across all tiers.
+- `eligible[item]` per book = sum of item counts across that book's receipts.
+- `remaining[item]` = `max(0, eligible - distributed)`.
+- Row status = `COMPLETED` when all four remaining counts are 0, else `PENDING`.
 
 ## 3. API Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/v1/prasad/sevak/{sevakId}` | Full distribution overview and receipt checklist. |
-| POST | `/api/v1/prasad/distribute` | Record tier box distribution and mark receipts served. |
-| GET | `/api/v1/reports/master-summary/excel` | Multi-tab master summary Excel export. |
+| GET | `/api/v1/prasad/summary` | Paginated book-level rows + aggregate item totals + mandal list. Filters: `search`, `sevakCode`, `sevakName`, `mobile`, `sahSevakName`, `sahSevakMobile`, `mandal`, `status`, `page`, `limit`. |
+| POST | `/api/v1/prasad/distribute` | Increment distributed item counts for `(sevakId, bookNumber)` and record the collector. |
+| GET | `/api/v1/prasad/export` | Excel workbook `Prasad_Vitran_Records_2026.xlsx` of the filtered rows. |
 
-## 4. Idempotency and Over-allocation Protection
+### Distribute request body
+```json
+{
+  "sevakId": "uuid",
+  "bookNumber": "12",
+  "distributedSmall": 0,
+  "distributedBig": 1,
+  "distributedBiscuit": 1,
+  "distributedChocolate": 0,
+  "collectedByName": "Representative Name",
+  "collectedByMobile": "9876543210",
+  "notes": "optional"
+}
+```
 
-### Over-allocation Prevention
-- The service calculates `remainingBoxes` for every tier.
-- The API rejects any `distributeCount` that exceeds the remaining boxes with HTTP 400.
-- The client adds an instant red border when an input exceeds the remaining value and disables the submit button.
+Response: `{ "success": true, "message": "Prasad distributed successfully", "data": <PrasadDistribution> }`
 
-### Single-serve Protection
-- `prasadDistributed` is a boolean flag on `SevaReceipt`.
-- The API checks every `receiptId` in the request before the transaction.
-- If any requested receipt is already served, the entire request is rejected with HTTP 409 and the conflicting receipt numbers are returned.
-- The transaction only marks receipts that are currently unserved, and it sets `distributedAt` and `distributedBy` for audit.
+## 4. Validation and Over-allocation Protection
 
-### Atomicity
-- All writes run inside a single Prisma `$transaction`:
-  1. Increment `distributedBoxes` in `PrasadDistribution` for each tier (upserting the row if it does not exist).
-  2. Update the marked `SevaReceipt` rows to `prasadDistributed: true`.
-  3. Re-evaluate affected `BookAllocation` records, updating them to `SUBMITTED` (all receipts served) or `PARTIALLY_SUBMITTED` (some served).
-  4. Create an `AuditLog` entry.
+- Quantities are **increments** — each call adds to the stored `distributed*` counts.
+- The API rejects any item whose requested count exceeds `eligible - distributed` for that book with HTTP 400.
+- All validation and the upsert run inside a single Prisma `$transaction`.
+- `distributedAt` is set to the current time and `distributedBy` to the authenticated volunteer (`fullName`/`email`).
+- An `AuditLog` entry (`PRASAD_DISTRIBUTE`) is written after each successful handover.
+- `collectedByMobile` must contain at least 10 digits when provided.
 
-## 5. Master Summary Excel Export
+## 5. Excel Export
 
-The `/api/v1/reports/master-summary/excel` endpoint streams a three-tab workbook:
+`GET /api/v1/prasad/export` streams a single-sheet workbook with 16 columns:
+Sevak Code, Sevak Name, Sevak Mobile, Mandal, Book Number, Sah-Sevak Name, Sah-Sevak Mobile, Small Box (E/G/R), Big Box (E/G/R), Biscuit Box (E/G/R), Chocolate Box (E/G/R), Picked Up By (Name), Picked Up By (Mobile), Status, Dispensed By, Dispensed At.
 
-1. **Master Sevak Summary** — one row per sevak with code, name, phone, mandal, kshetra, total seva, books, receipts, boxes eligible, given, and pending.
-2. **Tier-wise Box Allocation** — per sevak, per slab tier breakdown of receipt counts and box counts.
-3. **Receipt Audit Trail** — every receipt with book number, receipt number, donor, amount, distribution status, and timestamp.
+It accepts the same query filters as `/prasad/summary`.
 
 ## 6. File Reference
 
 | File | Responsibility |
 |------|---------------|
-| `server/src/services/prasad.service.ts` | Tier logic, overview aggregation, master export data. |
-| `server/src/controllers/prasad.controller.ts` | HTTP handlers for overview, distribution, and Excel export. |
+| `server/src/services/prasad.service.ts` | Slab rules (`computePrasadItems`), book-row builder, filter/pagination data. |
+| `server/src/controllers/prasad.controller.ts` | HTTP handlers for summary, distribution, and Excel export. |
 | `server/src/routes/prasad.routes.ts` | `/api/v1/prasad` routes. |
-| `server/src/routes/reports.routes.ts` | `/api/v1/reports` route for master summary Excel. |
-| `client/src/pages/PrasadDistribution.tsx` | Mobile-first counter UI. |
-| `docs/openapi.yaml` | OpenAPI specifications for the new endpoints. |
+| `client/src/pages/PrasadCounter.tsx` | Counter UI: summary cards, filter bar, book grid, distribution modal. |
+| `docs/openapi.yaml` | OpenAPI specifications for the endpoints. |
