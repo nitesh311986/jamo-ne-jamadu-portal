@@ -1051,32 +1051,71 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /prasad/sevak/{sevakId}:
+  /prasad/summary:
     get:
-      summary: Get full prasad distribution overview for a sevak
-      operationId: getSevakPrasadOverview
+      summary: Get live book-level prasad eligibility and distribution summary
+      description: >-
+        Returns one row per allocated book with item-wise eligible, distributed
+        and remaining quantities computed from receipt slab rules, plus desk-wide
+        aggregate totals and the list of mandals for filtering.
+      operationId: getPrasadSummary
       tags:
         - Prasad
       parameters:
-        - in: path
-          name: sevakId
-          required: true
+        - in: query
+          name: search
           schema:
             type: string
-            format: uuid
+          description: Matches sevak code, name, mobile, book number, sah-sevak name or mobile
+        - in: query
+          name: sevakCode
+          schema:
+            type: string
+        - in: query
+          name: sevakName
+          schema:
+            type: string
+        - in: query
+          name: mobile
+          schema:
+            type: string
+        - in: query
+          name: sahSevakName
+          schema:
+            type: string
+        - in: query
+          name: sahSevakMobile
+          schema:
+            type: string
+        - in: query
+          name: mandal
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [ALL, PENDING, COMPLETED]
+            default: ALL
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            enum: [5, 10, 20, 50]
+            default: 10
       responses:
         '200':
-          description: Distribution overview
+          description: Paginated book rows with aggregate item totals
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PrasadDistributionOverview'
-        '404':
-          description: Sevak not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/PrasadSummaryResponse'
         '500':
           description: Internal server error
           content:
@@ -1086,7 +1125,11 @@ paths:
 
   /prasad/distribute:
     post:
-      summary: Record prasad distribution for a sevak
+      summary: Record prasad distribution for a sevak's book
+      description: >-
+        Increments the distributed item counts for the (sevakId, bookNumber)
+        pair. Requested quantities are validated against the remaining eligible
+        quantities computed from that book's receipts.
       operationId: distributePrasad
       tags:
         - Prasad
@@ -1109,8 +1152,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '409':
-          description: Receipts already served
+        '404':
+          description: Sevak not found or book not allocated to sevak
           content:
             application/json:
               schema:
@@ -1122,12 +1165,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /reports/master-summary/excel:
+  /prasad/export:
     get:
-      summary: Download master summary Excel workbook
-      operationId: exportMasterSummaryExcel
+      summary: Download Prasad Vitran records Excel workbook
+      description: >-
+        Exports the same filtered book-level rows as /prasad/summary into a
+        formatted workbook named Prasad_Vitran_Records_2026.xlsx.
+      operationId: exportPrasadExcel
       tags:
-        - Reports
+        - Prasad
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: sevakCode
+          schema:
+            type: string
+        - in: query
+          name: sevakName
+          schema:
+            type: string
+        - in: query
+          name: mobile
+          schema:
+            type: string
+        - in: query
+          name: sahSevakName
+          schema:
+            type: string
+        - in: query
+          name: sahSevakMobile
+          schema:
+            type: string
+        - in: query
+          name: mandal
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [ALL, PENDING, COMPLETED]
       responses:
         '200':
           description: Excel file download
@@ -1854,196 +1934,279 @@ components:
         summary:
           $ref: '#/components/schemas/ReceiptSummaryResponse'
 
-    PrasadTierBreakdown:
+    PrasadItemCounts:
       type: object
       required:
-        - slabTier
-        - tierLabel
-        - minAmount
-        - maxAmount
-        - totalReceipts
-        - unservedReceipts
-        - eligibleBoxes
-        - distributedBoxes
-        - remainingBoxes
+        - small
+        - big
+        - biscuit
+        - chocolate
       properties:
-        slabTier:
-          type: string
-        tierLabel:
-          type: string
-        minAmount:
-          type: number
-        maxAmount:
-          type: number
-          nullable: true
-        totalReceipts:
+        small:
           type: integer
-        unservedReceipts:
+          minimum: 0
+          description: Small Box count
+        big:
           type: integer
-        eligibleBoxes:
+          minimum: 0
+          description: Big Box count
+        biscuit:
           type: integer
-        distributedBoxes:
+          minimum: 0
+          description: Biscuit Box count
+        chocolate:
           type: integer
-        remainingBoxes:
-          type: integer
+          minimum: 0
+          description: Chocolate Box count
 
-    PrasadDistributionReceipt:
+    PrasadItemTotals:
       type: object
       required:
-        - id
-        - receiptNo
-        - amount
-        - prasadDistributed
-        - boxesGenerated
+        - eligible
+        - given
+        - remaining
       properties:
-        id:
+        eligible:
+          type: integer
+          minimum: 0
+        given:
+          type: integer
+          minimum: 0
+        remaining:
+          type: integer
+          minimum: 0
+
+    PrasadSummaryTotals:
+      type: object
+      required:
+        - smallBox
+        - bigBox
+        - biscuitBox
+        - chocolateBox
+      properties:
+        smallBox:
+          $ref: '#/components/schemas/PrasadItemTotals'
+        bigBox:
+          $ref: '#/components/schemas/PrasadItemTotals'
+        biscuitBox:
+          $ref: '#/components/schemas/PrasadItemTotals'
+        chocolateBox:
+          $ref: '#/components/schemas/PrasadItemTotals'
+
+    PrasadBookRow:
+      type: object
+      required:
+        - sevakId
+        - sevakCode
+        - sevakName
+        - sevakMobile
+        - mandal
+        - kshetra
+        - bookNumber
+        - bookStatus
+        - receiptCount
+        - eligible
+        - distributed
+        - remaining
+        - status
+      properties:
+        sevakId:
           type: string
           format: uuid
-        receiptNo:
+        sevakCode:
           type: string
-        donorName:
+        sevakName:
           type: string
-          nullable: true
-        amount:
-          type: number
-        prasadDistributed:
-          type: boolean
-        distributedAt:
+        sevakMobile:
           type: string
-          format: date-time
-          nullable: true
-        boxesGenerated:
-          type: integer
-
-    PrasadBookGroup:
-      type: object
-      required:
-        - bookNumber
-        - status
-        - assignedAt
-        - receipts
-      properties:
+        mandal:
+          type: string
+        kshetra:
+          type: string
         bookNumber:
           type: string
-        status:
+        bookStatus:
           type: string
           enum:
             - ASSIGNED
             - SUBMITTED
             - PARTIALLY_SUBMITTED
-        assignedAt:
+        sahSevakName:
+          type: string
+          nullable: true
+        sahSevakMobile:
+          type: string
+          nullable: true
+        receiptCount:
+          type: integer
+          minimum: 0
+        eligible:
+          $ref: '#/components/schemas/PrasadItemCounts'
+        distributed:
+          $ref: '#/components/schemas/PrasadItemCounts'
+        remaining:
+          $ref: '#/components/schemas/PrasadItemCounts'
+        collectedByName:
+          type: string
+          nullable: true
+        collectedByMobile:
+          type: string
+          nullable: true
+        distributedBy:
+          type: string
+          nullable: true
+        distributedAt:
           type: string
           format: date-time
-        receipts:
-          type: array
-          items:
-            $ref: '#/components/schemas/PrasadDistributionReceipt'
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - PENDING
+            - COMPLETED
 
-    PrasadDistributionOverview:
+    PrasadSummaryResponse:
       type: object
       required:
-        - sevak
-        - books
-        - receipts
-        - tiers
-        - grandTotal
-        - receiptsByBook
+        - success
+        - data
+        - summary
+        - mandals
+        - pagination
       properties:
-        sevak:
-          $ref: '#/components/schemas/Sevak'
-        books:
-          type: object
-          required:
-            - total
-            - completed
-            - partially
-            - pending
-          properties:
-            total:
-              type: integer
-            completed:
-              type: integer
-            partially:
-              type: integer
-            pending:
-              type: integer
-        receipts:
-          type: object
-          required:
-            - total
-            - served
-            - unserved
-          properties:
-            total:
-              type: integer
-            served:
-              type: integer
-            unserved:
-              type: integer
-        tiers:
+        success:
+          type: boolean
+        data:
           type: array
           items:
-            $ref: '#/components/schemas/PrasadTierBreakdown'
-        grandTotal:
-          type: object
-          required:
-            - totalSevaAmount
-            - eligibleBoxes
-            - distributedBoxes
-            - pendingBoxes
-          properties:
-            totalSevaAmount:
-              type: number
-            eligibleBoxes:
-              type: integer
-            distributedBoxes:
-              type: integer
-            pendingBoxes:
-              type: integer
-        receiptsByBook:
+            $ref: '#/components/schemas/PrasadBookRow'
+        summary:
+          $ref: '#/components/schemas/PrasadSummaryTotals'
+        mandals:
           type: array
           items:
-            $ref: '#/components/schemas/PrasadBookGroup'
+            type: string
+        pagination:
+          type: object
+          required:
+            - totalCount
+            - totalPages
+            - currentPage
+            - pageSize
+          properties:
+            totalCount:
+              type: integer
+            totalPages:
+              type: integer
+            currentPage:
+              type: integer
+            pageSize:
+              type: integer
+            hasNextPage:
+              type: boolean
+            hasPrevPage:
+              type: boolean
 
     PrasadDistributeRequest:
       type: object
       required:
         - sevakId
-        - tierDistributions
-        - receiptIdsToMark
+        - bookNumber
       properties:
         sevakId:
           type: string
           format: uuid
-        tierDistributions:
-          type: array
-          items:
-            type: object
-            required:
-              - slabTier
-              - distributeCount
-            properties:
-              slabTier:
-                type: string
-              distributeCount:
-                type: integer
-                minimum: 0
-        receiptIdsToMark:
-          type: array
-          items:
-            type: string
-            format: uuid
+        bookNumber:
+          type: string
+        distributedSmall:
+          type: integer
+          minimum: 0
+          default: 0
+        distributedBig:
+          type: integer
+          minimum: 0
+          default: 0
+        distributedBiscuit:
+          type: integer
+          minimum: 0
+          default: 0
+        distributedChocolate:
+          type: integer
+          minimum: 0
+          default: 0
+        collectedByName:
+          type: string
+          description: Name of the person picking up the prasad
+        collectedByMobile:
+          type: string
+          description: Mobile of the person picking up the prasad
+        notes:
+          type: string
+
+    PrasadDistributionRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sevakId:
+          type: string
+          format: uuid
+        bookNumber:
+          type: string
+          nullable: true
+        eligibleSmall:
+          type: integer
+        eligibleBig:
+          type: integer
+        eligibleBiscuit:
+          type: integer
+        eligibleChocolate:
+          type: integer
+        distributedSmall:
+          type: integer
+        distributedBig:
+          type: integer
+        distributedBiscuit:
+          type: integer
+        distributedChocolate:
+          type: integer
+        collectedByName:
+          type: string
+          nullable: true
+        collectedByMobile:
+          type: string
+          nullable: true
+        distributedAt:
+          type: string
+          format: date-time
+          nullable: true
+        distributedBy:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
 
     PrasadDistributeResponse:
       type: object
       required:
+        - success
         - message
-        - receiptsServed
+        - data
       properties:
+        success:
+          type: boolean
         message:
           type: string
-        receiptsServed:
-          type: integer
+        data:
+          $ref: '#/components/schemas/PrasadDistributionRecord'
 
     DashboardStatsResponse:
       type: object

@@ -1,379 +1,336 @@
-import { BookStatus } from '@prisma/client';
+import { BookStatus, Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 
-export interface TierDefinition {
+export interface PrasadItems {
+  small: number;
+  big: number;
+  biscuit: number;
+  chocolate: number;
+}
+
+export interface SlabDefinition {
   key: string;
   label: string;
   min: number;
   max: number | null;
-  oneBoxPerUniqueAmount: boolean;
+  items: PrasadItems;
 }
 
-export const TIER_DEFS: TierDefinition[] = [
-  { key: 'LT_500', label: '< ₹500', min: 0, max: 499.99, oneBoxPerUniqueAmount: true },
-  { key: 'GTE_500_LT_1000', label: '₹500 - ₹999', min: 500, max: 999.99, oneBoxPerUniqueAmount: false },
-  { key: 'GTE_1000_LT_2000', label: '₹1,000 - ₹1,999', min: 1000, max: 1999.99, oneBoxPerUniqueAmount: false },
-  { key: 'GTE_2000_LT_5000', label: '₹2,000 - ₹4,999', min: 2000, max: 4999.99, oneBoxPerUniqueAmount: false },
-  { key: 'GTE_5000_LT_10000', label: '₹5,000 - ₹9,999', min: 5000, max: 9999.99, oneBoxPerUniqueAmount: false },
-  { key: 'GTE_10000_LT_25000', label: '₹10,000 - ₹24,999', min: 10000, max: 24999.99, oneBoxPerUniqueAmount: false },
-  { key: 'GTE_25000_LT_50000', label: '₹25,000 - ₹49,999', min: 25000, max: 49999.99, oneBoxPerUniqueAmount: false },
-  { key: 'GTE_50000', label: '≥ ₹50,000', min: 50000, max: null, oneBoxPerUniqueAmount: false },
+// Mandir slab rules applied per receipt amount.
+export const SLAB_DEFS: SlabDefinition[] = [
+  {
+    key: 'SLAB_1',
+    label: '₹1 - ₹499',
+    min: 1,
+    max: 499.99,
+    items: { small: 1, big: 0, biscuit: 0, chocolate: 0 },
+  },
+  {
+    key: 'SLAB_2',
+    label: '₹500 - ₹1,000',
+    min: 500,
+    max: 1000,
+    items: { small: 0, big: 1, biscuit: 0, chocolate: 0 },
+  },
+  {
+    key: 'SLAB_3',
+    label: '₹1,001 - ₹4,999',
+    min: 1000.01,
+    max: 4999.99,
+    items: { small: 0, big: 1, biscuit: 1, chocolate: 0 },
+  },
+  {
+    key: 'SLAB_4',
+    label: '₹5,000+',
+    min: 5000,
+    max: null,
+    items: { small: 0, big: 1, biscuit: 1, chocolate: 1 },
+  },
 ];
 
-export function classifyTier(amount: number): TierDefinition {
-  for (const tier of TIER_DEFS) {
-    if (tier.max === null) {
-      if (amount >= tier.min) return tier;
-    } else if (amount >= tier.min && amount <= tier.max) {
-      return tier;
+export function computePrasadItems(amount: number): PrasadItems {
+  if (!Number.isFinite(amount) || amount < 1) {
+    return { small: 0, big: 0, biscuit: 0, chocolate: 0 };
+  }
+  for (const slab of SLAB_DEFS) {
+    const withinMax = slab.max === null || amount <= slab.max;
+    if (amount >= slab.min && withinMax) {
+      return { ...slab.items };
     }
   }
-  return TIER_DEFS[0];
+  return { small: 0, big: 0, biscuit: 0, chocolate: 0 };
 }
 
-export interface DistributionReceipt {
-  id: string;
-  receiptNo: string;
-  donorName: string | null;
-  amount: number;
-  prasadDistributed: boolean;
-  distributedAt: string | null;
-  boxesGenerated: number;
-}
-
-export interface BookGroup {
-  bookNumber: string;
-  status: BookStatus;
-  assignedAt: string;
-  receipts: DistributionReceipt[];
-}
-
-export interface TierBreakdown {
-  slabTier: string;
-  tierLabel: string;
-  minAmount: number;
-  maxAmount: number | null;
-  totalReceipts: number;
-  unservedReceipts: number;
-  eligibleBoxes: number;
-  distributedBoxes: number;
-  remainingBoxes: number;
-}
-
-export interface DistributionOverview {
-  sevak: {
-    id: string;
-    sevakCode: string;
-    fullName: string;
-    firstName: string;
-    lastName: string;
-    mobile: string;
-    altMobile: string | null;
-    whatsapp: string | null;
-    address: string;
-    mandal: string;
-    kshetra: string;
-    expectedContacts: number;
-  };
-  books: {
-    total: number;
-    completed: number;
-    partially: number;
-    pending: number;
-  };
-  receipts: {
-    total: number;
-    served: number;
-    unserved: number;
-  };
-  tiers: TierBreakdown[];
-  grandTotal: {
-    totalSevaAmount: number;
-    eligibleBoxes: number;
-    distributedBoxes: number;
-    pendingBoxes: number;
-  };
-  receiptsByBook: BookGroup[];
-}
-
-function toINR(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-export function buildOverview(
-  sevak: {
-    id: string;
-    sevakCode: string;
-    fullName: string;
-    firstName: string;
-    lastName: string;
-    mobile: string;
-    altMobile: string | null;
-    whatsapp: string | null;
-    address: string;
-    mandal: string;
-    kshetra: string;
-    expectedContacts: number;
-  },
-  receipts: Array<{
-    id: string;
-    bookNumber: string;
-    receiptNo: string;
-    donorName: string | null;
-    amount: { toNumber: () => number } | number;
-    prasadDistributed: boolean;
-    distributedAt: Date | null;
-    entryDate: Date;
-  }>,
-  distributions: Array<{ slabTier: string; distributedBoxes: number }>,
-  books: Array<{ bookNumber: string; status: BookStatus; assignedAt: Date }>
-): DistributionOverview {
-  const normalizedReceipts = receipts
-    .map((r) => ({
-      ...r,
-      amountNum: typeof r.amount === 'number' ? r.amount : r.amount.toNumber(),
-    }))
-    .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
-
-  const totalSevaAmount = normalizedReceipts.reduce((sum, r) => sum + r.amountNum, 0);
-  const totalReceipts = normalizedReceipts.length;
-  const servedReceipts = normalizedReceipts.filter((r) => r.prasadDistributed).length;
-  const unservedReceipts = totalReceipts - servedReceipts;
-
-  const tierLookup: Record<string, TierBreakdown> = {};
-  for (const def of TIER_DEFS) {
-    const tierReceipts = normalizedReceipts.filter((r) => {
-      const t = classifyTier(r.amountNum);
-      return t.key === def.key;
-    });
-
-    const totalInTier = tierReceipts.length;
-    const unservedInTier = tierReceipts.filter((r) => !r.prasadDistributed).length;
-
-    let eligibleBoxes = 0;
-    if (def.oneBoxPerUniqueAmount) {
-      const uniqueAmounts = new Set(tierReceipts.map((r) => r.amountNum));
-      eligibleBoxes = uniqueAmounts.size;
-    } else {
-      eligibleBoxes = totalInTier;
+export function classifySlabLabel(amount: number): string {
+  for (const slab of SLAB_DEFS) {
+    const withinMax = slab.max === null || amount <= slab.max;
+    if (amount >= slab.min && withinMax) {
+      return slab.label;
     }
-
-    const distRow = distributions.find((d) => d.slabTier === def.key);
-    const distributedBoxes = distRow?.distributedBoxes ?? 0;
-    const remainingBoxes = Math.max(0, eligibleBoxes - distributedBoxes);
-
-    tierLookup[def.key] = {
-      slabTier: def.key,
-      tierLabel: def.label,
-      minAmount: def.min,
-      maxAmount: def.max,
-      totalReceipts: totalInTier,
-      unservedReceipts: unservedInTier,
-      eligibleBoxes,
-      distributedBoxes,
-      remainingBoxes,
-    };
   }
-
-  // Compute receipt-level box contribution for the checklist/breakdown.
-  const usedUniqueAmounts = new Set<number>();
-  const receiptGroups: Record<string, BookGroup> = {};
-  for (const book of books) {
-    receiptGroups[book.bookNumber] = {
-      bookNumber: book.bookNumber,
-      status: book.status,
-      assignedAt: book.assignedAt.toISOString(),
-      receipts: [],
-    };
-  }
-
-  for (const r of normalizedReceipts) {
-    const tier = classifyTier(r.amountNum);
-    let boxesGenerated = 0;
-    if (tier.oneBoxPerUniqueAmount) {
-      if (!usedUniqueAmounts.has(r.amountNum)) {
-        usedUniqueAmounts.add(r.amountNum);
-        boxesGenerated = 1;
-      }
-    } else {
-      boxesGenerated = 1;
-    }
-
-    const group = receiptGroups[r.bookNumber] ?? {
-      bookNumber: r.bookNumber,
-      status: BookStatus.ASSIGNED,
-      assignedAt: r.entryDate.toISOString(),
-      receipts: [],
-    };
-
-    group.receipts.push({
-      id: r.id,
-      receiptNo: r.receiptNo,
-      donorName: r.donorName,
-      amount: toINR(r.amountNum),
-      prasadDistributed: r.prasadDistributed,
-      distributedAt: r.distributedAt ? r.distributedAt.toISOString() : null,
-      boxesGenerated,
-    });
-    receiptGroups[r.bookNumber] = group;
-  }
-
-  const receiptsByBook = Object.values(receiptGroups).sort((a, b) =>
-    a.bookNumber.localeCompare(b.bookNumber)
-  );
-
-  const booksCompleted = books.filter((b) => b.status === BookStatus.SUBMITTED).length;
-  const booksPartially = books.filter((b) => b.status === BookStatus.PARTIALLY_SUBMITTED).length;
-
-  const grandEligible = Object.values(tierLookup).reduce((sum, t) => sum + t.eligibleBoxes, 0);
-  const grandDistributed = Object.values(tierLookup).reduce((sum, t) => sum + t.distributedBoxes, 0);
-
-  return {
-    sevak,
-    books: {
-      total: books.length,
-      completed: booksCompleted,
-      partially: booksPartially,
-      pending: books.length - booksCompleted,
-    },
-    receipts: {
-      total: totalReceipts,
-      served: servedReceipts,
-      unserved: unservedReceipts,
-    },
-    tiers: TIER_DEFS.map((d) => tierLookup[d.key]),
-    grandTotal: {
-      totalSevaAmount: toINR(totalSevaAmount),
-      eligibleBoxes: grandEligible,
-      distributedBoxes: grandDistributed,
-      pendingBoxes: Math.max(0, grandEligible - grandDistributed),
-    },
-    receiptsByBook,
-  };
+  return '< ₹1';
 }
 
-export async function getSevakDistributionOverview(
-  sevakId: string
-): Promise<DistributionOverview | null> {
-  const sevak = await prisma.sevak.findUnique({
-    where: { id: sevakId },
-    include: {
-      receipts: true,
-      assignedBooks: true,
-      distributions: true,
-    },
-  });
-
-  if (!sevak) return null;
-
-  const { receipts, assignedBooks, distributions, ...sevakData } = sevak;
-  return buildOverview(sevakData, receipts, distributions, assignedBooks);
+export function sumPrasadItems(amounts: number[]): PrasadItems {
+  const total: PrasadItems = { small: 0, big: 0, biscuit: 0, chocolate: 0 };
+  for (const amount of amounts) {
+    const items = computePrasadItems(amount);
+    total.small += items.small;
+    total.big += items.big;
+    total.biscuit += items.biscuit;
+    total.chocolate += items.chocolate;
+  }
+  return total;
 }
 
-export interface MasterExportSevak {
+export type PrasadRowStatus = 'PENDING' | 'COMPLETED';
+
+export interface PrasadBookRow {
+  sevakId: string;
   sevakCode: string;
-  fullName: string;
-  mobile: string;
+  sevakName: string;
+  sevakMobile: string;
   mandal: string;
   kshetra: string;
-  totalSevaAmount: number;
-  totalBooks: number;
-  totalReceipts: number;
-  eligibleBoxes: number;
-  givenBoxes: number;
-  pendingBoxes: number;
-}
-
-export interface MasterExportRow {
-  overview: MasterExportSevak;
-  tierBreakdown: TierBreakdown[];
-  receipts: DistributionReceipt[];
   bookNumber: string;
+  bookStatus: BookStatus;
+  sahSevakName: string | null;
+  sahSevakMobile: string | null;
+  receiptCount: number;
+  receiptNos: string[];
+  eligible: PrasadItems;
+  distributed: PrasadItems;
+  remaining: PrasadItems;
+  collectedByName: string | null;
+  collectedByMobile: string | null;
+  distributedBy: string | null;
+  distributedAt: string | null;
+  notes: string | null;
+  status: PrasadRowStatus;
 }
 
-export async function getMasterSummaryExportData(): Promise<{
-  sevaks: MasterExportSevak[];
-  tierRows: Array<{ tierLabel: string; sevakCode: string; totalReceipts: number; unservedReceipts: number; eligibleBoxes: number; distributedBoxes: number; remainingBoxes: number }>;
-  auditRows: Array<{ bookNumber: string; receiptNo: string; sevakCode: string; fullName: string; donorName: string | null; amount: number; distributed: boolean; distributedAt: string | null }>;
-}> {
-  const sevaks = await prisma.sevak.findMany({
-    include: {
-      receipts: true,
-      assignedBooks: true,
-      distributions: true,
-    },
-    orderBy: { sevakCode: 'asc' },
-  });
+export interface PrasadItemTotals {
+  eligible: number;
+  given: number;
+  remaining: number;
+}
 
-  const sevakRows: MasterExportSevak[] = [];
-  const tierRows: Array<{
-    tierLabel: string;
-    sevakCode: string;
-    totalReceipts: number;
-    unservedReceipts: number;
-    eligibleBoxes: number;
-    distributedBoxes: number;
-    remainingBoxes: number;
-  }> = [];
+export interface PrasadSummaryTotals {
+  smallBox: PrasadItemTotals;
+  bigBox: PrasadItemTotals;
+  biscuitBox: PrasadItemTotals;
+  chocolateBox: PrasadItemTotals;
+}
 
-  const auditRows: Array<{
-    bookNumber: string;
-    receiptNo: string;
-    sevakCode: string;
-    fullName: string;
-    donorName: string | null;
-    amount: number;
-    distributed: boolean;
-    distributedAt: string | null;
-  }> = [];
+export interface PrasadSummaryFilters {
+  search?: string;
+  sevakCode?: string;
+  sevakName?: string;
+  mobile?: string;
+  sahSevakName?: string;
+  sahSevakMobile?: string;
+  mandal?: string;
+  status?: 'ALL' | 'PENDING' | 'COMPLETED';
+}
 
-  for (const sevak of sevaks) {
-    const { receipts, assignedBooks, distributions, ...sevakData } = sevak;
-    const overview = buildOverview(sevakData, receipts, distributions, assignedBooks);
+export interface PrasadSummaryData {
+  rows: PrasadBookRow[];
+  summary: PrasadSummaryTotals;
+  mandals: string[];
+}
 
-    sevakRows.push({
-      sevakCode: sevakData.sevakCode,
-      fullName: sevakData.fullName,
-      mobile: sevakData.mobile,
-      mandal: sevakData.mandal,
-      kshetra: sevakData.kshetra,
-      totalSevaAmount: overview.grandTotal.totalSevaAmount,
-      totalBooks: overview.books.total,
-      totalReceipts: overview.receipts.total,
-      eligibleBoxes: overview.grandTotal.eligibleBoxes,
-      givenBoxes: overview.grandTotal.distributedBoxes,
-      pendingBoxes: overview.grandTotal.pendingBoxes,
+function toAmountNumber(amount: Prisma.Decimal | number): number {
+  return typeof amount === 'number' ? amount : amount.toNumber();
+}
+
+export function buildSevakWhere(filters: PrasadSummaryFilters): Prisma.SevakWhereInput {
+  const and: Prisma.SevakWhereInput[] = [];
+
+  if (filters.search) {
+    and.push({
+      OR: [
+        { sevakCode: { contains: filters.search, mode: 'insensitive' } },
+        { fullName: { contains: filters.search, mode: 'insensitive' } },
+        { mobile: { contains: filters.search } },
+        { altMobile: { contains: filters.search } },
+        {
+          assignedBooks: {
+            some: {
+              OR: [
+                { bookNumber: { equals: filters.search } },
+                { sahSevakName: { contains: filters.search, mode: 'insensitive' } },
+                { sahSevakMobile: { contains: filters.search } },
+              ],
+            },
+          },
+        },
+        {
+          receipts: {
+            some: {
+              receiptNo: { contains: filters.search },
+            },
+          },
+        },
+      ],
     });
+  }
 
-    for (const tier of overview.tiers) {
-      if (tier.totalReceipts > 0) {
-        tierRows.push({
-          tierLabel: tier.tierLabel,
-          sevakCode: sevakData.sevakCode,
-          totalReceipts: tier.totalReceipts,
-          unservedReceipts: tier.unservedReceipts,
-          eligibleBoxes: tier.eligibleBoxes,
-          distributedBoxes: tier.distributedBoxes,
-          remainingBoxes: tier.remainingBoxes,
-        });
-      }
-    }
+  if (filters.sevakCode) {
+    and.push({ sevakCode: { contains: filters.sevakCode, mode: 'insensitive' } });
+  }
+  if (filters.sevakName) {
+    and.push({ fullName: { contains: filters.sevakName, mode: 'insensitive' } });
+  }
+  if (filters.mobile) {
+    and.push({
+      OR: [{ mobile: { contains: filters.mobile } }, { altMobile: { contains: filters.mobile } }],
+    });
+  }
+  if (filters.mandal) {
+    and.push({ mandal: { equals: filters.mandal, mode: 'insensitive' } });
+  }
+  if (filters.sahSevakName) {
+    and.push({
+      assignedBooks: {
+        some: { sahSevakName: { contains: filters.sahSevakName, mode: 'insensitive' } },
+      },
+    });
+  }
+  if (filters.sahSevakMobile) {
+    and.push({
+      assignedBooks: {
+        some: { sahSevakMobile: { contains: filters.sahSevakMobile } },
+      },
+    });
+  }
 
-    for (const group of overview.receiptsByBook) {
-      for (const r of group.receipts) {
-        auditRows.push({
-          bookNumber: group.bookNumber,
-          receiptNo: r.receiptNo,
-          sevakCode: sevakData.sevakCode,
-          fullName: sevakData.fullName,
-          donorName: r.donorName,
-          amount: r.amount,
-          distributed: r.prasadDistributed,
-          distributedAt: r.distributedAt,
-        });
-      }
+  return and.length > 0 ? { AND: and } : {};
+}
+
+function compareBookNumbers(a: string, b: string): number {
+  const aNum = Number(a);
+  const bNum = Number(b);
+  if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+    return aNum - bNum;
+  }
+  return a.localeCompare(b);
+}
+
+type SevakWithPrasadData = Prisma.SevakGetPayload<{
+  include: { assignedBooks: true; receipts: true; distributions: true };
+}>;
+
+function buildBookRow(sevak: SevakWithPrasadData, book: SevakWithPrasadData['assignedBooks'][number]): PrasadBookRow {
+  const bookReceipts = sevak.receipts.filter((r) => r.bookNumber === book.bookNumber);
+  const eligible = sumPrasadItems(bookReceipts.map((r) => toAmountNumber(r.amount)));
+
+  const distribution = sevak.distributions.find((d) => d.bookNumber === book.bookNumber);
+  const distributed: PrasadItems = {
+    small: distribution?.distributedSmall ?? 0,
+    big: distribution?.distributedBig ?? 0,
+    biscuit: distribution?.distributedBiscuit ?? 0,
+    chocolate: distribution?.distributedChocolate ?? 0,
+  };
+
+  const remaining: PrasadItems = {
+    small: Math.max(0, eligible.small - distributed.small),
+    big: Math.max(0, eligible.big - distributed.big),
+    biscuit: Math.max(0, eligible.biscuit - distributed.biscuit),
+    chocolate: Math.max(0, eligible.chocolate - distributed.chocolate),
+  };
+
+  const status: PrasadRowStatus =
+    remaining.small + remaining.big + remaining.biscuit + remaining.chocolate === 0
+      ? 'COMPLETED'
+      : 'PENDING';
+
+  return {
+    sevakId: sevak.id,
+    sevakCode: sevak.sevakCode,
+    sevakName: sevak.fullName,
+    sevakMobile: sevak.mobile,
+    mandal: sevak.mandal,
+    kshetra: sevak.kshetra,
+    bookNumber: book.bookNumber,
+    bookStatus: book.status,
+    sahSevakName: book.sahSevakName,
+    sahSevakMobile: book.sahSevakMobile,
+    receiptCount: bookReceipts.length,
+    receiptNos: bookReceipts.map((r) => r.receiptNo),
+    eligible,
+    distributed,
+    remaining,
+    collectedByName: distribution?.collectedByName ?? null,
+    collectedByMobile: distribution?.collectedByMobile ?? null,
+    distributedBy: distribution?.distributedBy ?? null,
+    distributedAt: distribution?.distributedAt
+      ? distribution.distributedAt.toISOString()
+      : null,
+    notes: distribution?.notes ?? null,
+    status,
+  };
+}
+
+function emptyTotals(): PrasadSummaryTotals {
+  return {
+    smallBox: { eligible: 0, given: 0, remaining: 0 },
+    bigBox: { eligible: 0, given: 0, remaining: 0 },
+    biscuitBox: { eligible: 0, given: 0, remaining: 0 },
+    chocolateBox: { eligible: 0, given: 0, remaining: 0 },
+  };
+}
+
+export async function getPrasadSummaryData(
+  filters: PrasadSummaryFilters
+): Promise<PrasadSummaryData> {
+  const where = buildSevakWhere(filters);
+
+  const [sevaks, mandalRows] = await Promise.all([
+    prisma.sevak.findMany({
+      where,
+      include: { assignedBooks: true, receipts: true, distributions: true },
+      orderBy: { sevakCode: 'asc' },
+    }),
+    prisma.sevak.findMany({
+      select: { mandal: true },
+      distinct: ['mandal'],
+      orderBy: { mandal: 'asc' },
+    }),
+  ]);
+
+  const rows: PrasadBookRow[] = [];
+  for (const sevak of sevaks) {
+    const sortedBooks = [...sevak.assignedBooks].sort((a, b) =>
+      compareBookNumbers(a.bookNumber, b.bookNumber)
+    );
+    for (const book of sortedBooks) {
+      rows.push(buildBookRow(sevak, book));
     }
   }
 
-  return { sevaks: sevakRows, tierRows, auditRows };
+  const statusFilter = filters.status ?? 'ALL';
+  const filteredRows =
+    statusFilter === 'ALL' ? rows : rows.filter((r) => r.status === statusFilter);
+
+  const summary = emptyTotals();
+  const itemKeys = [
+    ['smallBox', 'small'],
+    ['bigBox', 'big'],
+    ['biscuitBox', 'biscuit'],
+    ['chocolateBox', 'chocolate'],
+  ] as const;
+
+  for (const row of filteredRows) {
+    for (const [totalKey, itemKey] of itemKeys) {
+      summary[totalKey].eligible += row.eligible[itemKey];
+      summary[totalKey].given += row.distributed[itemKey];
+      summary[totalKey].remaining += row.remaining[itemKey];
+    }
+  }
+
+  return {
+    rows: filteredRows,
+    summary,
+    mandals: mandalRows.map((m) => m.mandal),
+  };
 }
