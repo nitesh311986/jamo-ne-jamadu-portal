@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -23,7 +23,6 @@ interface NavItem {
   to: string;
   icon: typeof LayoutDashboard;
   allowedRoles?: Array<'SUPER_ADMIN' | 'VOLUNTEER'>;
-  disabled?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -34,24 +33,14 @@ const navItems: NavItem[] = [
   { label: 'Sevak Book Records', to: '/sevaks/book-records', icon: ClipboardList, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Book Collection', to: '/receipts/entry', icon: BookOpen, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Receipt Search', to: '/receipts/search', icon: Receipt, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
-  { label: 'Prasad Counter', to: '#', icon: HandHeart, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'], disabled: true },
+  { label: 'Prasad Counter', to: '/prasad/counter', icon: HandHeart, allowedRoles: ['SUPER_ADMIN', 'VOLUNTEER'] },
   { label: 'Admin Users', to: '/admin/users', icon: Shield, allowedRoles: ['SUPER_ADMIN'] },
 ];
-
-const PRASAD_TOAST_MESSAGE =
-  'Prasad distribution counter will open on festival distribution days.';
 
 export default function DashboardLayout(): ReactElement {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [prasadToast, setPrasadToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!prasadToast) return;
-    const timer = setTimeout(() => setPrasadToast(null), 3500);
-    return () => clearTimeout(timer);
-  }, [prasadToast]);
 
   const filteredNav = navItems.filter(
     (item) => !item.allowedRoles || (user && item.allowedRoles.includes(user.role))
@@ -107,43 +96,23 @@ export default function DashboardLayout(): ReactElement {
                 const isActive = pathname === item.to;
                 return (
                   <li key={item.to + item.label}>
-                    {item.disabled ? (
-                      <button
-                        type="button"
-                        onClick={() => setPrasadToast(PRASAD_TOAST_MESSAGE)}
-                        className="flex w-full cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-500 opacity-60"
-                      >
-                        <Icon size={18} />
-                        <span className="flex-1 text-left">{item.label}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                          Coming Soon
-                        </span>
-                      </button>
-                    ) : (
-                      <NavLink
-                        to={item.to}
-                        onClick={() => setIsSidebarOpen(false)}
-                        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                          isActive
-                            ? 'bg-blue-50 text-blue-600'
-                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                        }`}
-                      >
-                        <Icon size={18} />
-                        {item.label}
-                      </NavLink>
-                    )}
+                    <NavLink
+                      to={item.to}
+                      onClick={() => setIsSidebarOpen(false)}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                        isActive
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon size={18} />
+                      {item.label}
+                    </NavLink>
                   </li>
                 );
               })}
             </ul>
           </nav>
-
-          {prasadToast && (
-            <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-xs text-white shadow-md">
-              {prasadToast}
-            </div>
-          )}
 
           <div className="border-t border-slate-100 p-4">
             <button

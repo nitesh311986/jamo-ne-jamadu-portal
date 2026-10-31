@@ -8,7 +8,21 @@ export async function getDashboardStatsController(req: Request, res: Response): 
     logger.info('Dashboard stats fetched', { userId: req.user?.userId ?? 'unknown' });
     res.status(200).json({ success: true, data });
   } catch (err) {
-    logger.error('Dashboard stats error', { error: (err as Error).message });
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    const error = err as Error & { code?: string };
+    console.error('[DashboardController] stats failed:', {
+      message: error?.message ?? String(err),
+      code: error?.code ?? null,
+      stack: error?.stack,
+    });
+    logger.error('Dashboard stats error', {
+      error: error?.message ?? String(err),
+      code: error?.code ?? null,
+      stack: error?.stack,
+    });
+    res.status(500).json({
+      success: false,
+      error: error?.message || 'Internal server error',
+      code: error?.code || null,
+    });
   }
 }

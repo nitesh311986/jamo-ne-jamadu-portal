@@ -9,7 +9,7 @@ import SevakBookRecords from './pages/SevakBookRecords';
 import ReceiptEntry from './pages/ReceiptEntry';
 import ReceiptSearch from './pages/ReceiptSearch';
 import BookAllocation from './pages/BookAllocation';
-import PrasadDistribution from './pages/PrasadDistribution';
+import PrasadCounter from './pages/PrasadCounter';
 import ProtectedRoute from './components/ProtectedRoute';
 import DashboardLayout from './components/DashboardLayout';
 
@@ -27,7 +27,8 @@ function App(): ReactElement {
             <Route path="/receipts/entry" element={<ReceiptEntry />} />
             <Route path="/receipts/search" element={<ReceiptSearch />} />
             <Route path="/books/allocate" element={<BookAllocation />} />
-            <Route path="/prasad" element={<PrasadDistribution />} />
+            <Route path="/prasad" element={<Navigate to="/prasad/counter" replace />} />
+            <Route path="/prasad/counter" element={<PrasadCounter />} />
             <Route element={<ProtectedRoute allowedRoles={['SUPER_ADMIN']} />}>
               <Route path="/admin/users" element={<AdminUsers />} />
             </Route>
