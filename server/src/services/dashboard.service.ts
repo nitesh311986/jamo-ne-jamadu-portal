@@ -30,10 +30,25 @@ export interface DashboardOverview {
   totalReceiptsCount: number;
 }
 
+export interface PrasadItemCounters {
+  eligible: number;
+  given: number;
+  rem: number;
+}
+
+export interface PrasadItemsBreakdown {
+  bag: PrasadItemCounters;
+  smallBox: PrasadItemCounters;
+  bigBox: PrasadItemCounters;
+  biscuitBox: PrasadItemCounters;
+  chocolateBox: PrasadItemCounters;
+}
+
 export interface PrasadSummary {
   totalEligibleBoxes: number;
   totalDistributedBoxes: number;
   balanceBoxes: number;
+  items: PrasadItemsBreakdown;
 }
 
 export interface DashboardStats {
@@ -66,7 +81,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalPartiallySubmittedBooks,
     totalSevaAmountAgg,
     totalReceiptsCount,
-    totalBoxesDistributedAgg,
     recentReceipts,
     allReceipts,
   ] = await Promise.all([
@@ -76,20 +90,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.bookAllocation.count({ where: { status: 'PARTIALLY_SUBMITTED' } }),
     prisma.sevaReceipt.aggregate({ _sum: { amount: true } }),
     prisma.sevaReceipt.count(),
-    prisma.prasadDistribution.aggregate({
-      _sum: {
-        distributedBag: true,
-        distributedSmall: true,
-        distributedBig: true,
-        distributedBiscuit: true,
-        distributedChocolate: true,
-        extraBag: true,
-        extraSmall: true,
-        extraBig: true,
-        extraBiscuit: true,
-        extraChocolate: true,
-      },
-    }),
     prisma.sevaReceipt.findMany({
       take: 8,
       orderBy: { createdAt: 'desc' },
@@ -117,25 +117,78 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const totalSevaAmount = toNumber(totalSevaAmountAgg._sum.amount);
   const pendingBooks = totalAllocatedBooks - (totalSubmittedBooks + totalPartiallySubmittedBooks);
 
+  // Default safe fallback structure for all 5 Prasad items
+  const prasadItems: PrasadItemsBreakdown = {
+    bag: { eligible: 0, given: 0, rem: 0 },
+    smallBox: { eligible: 0, given: 0, rem: 0 },
+    bigBox: { eligible: 0, given: 0, rem: 0 },
+    biscuitBox: { eligible: 0, given: 0, rem: 0 },
+    chocolateBox: { eligible: 0, given: 0, rem: 0 },
+  };
+
   let totalEligibleBoxes = 0;
-  for (const receipt of allReceipts) {
-    const items = computePrasadItems(toNumber(receipt.amount));
-    totalEligibleBoxes +=
-      items.bag + items.small + items.big + items.biscuit + items.chocolate;
+
+  try {
+    for (const receipt of allReceipts) {
+      const items = computePrasadItems(toNumber(receipt.amount));
+      totalEligibleBoxes +=
+        items.bag + items.small + items.big + items.biscuit + items.chocolate;
+    }
+
+    const distributions = await prisma.prasadDistribution.findMany();
+
+    if (Array.isArray(distributions) && distributions.length > 0) {
+      for (const dist of distributions) {
+        const eligBag = toNumber(dist.eligibleBag ?? 0);
+        const distBag = toNumber(dist.distributedBag ?? 0);
+        const extBag = toNumber(dist.extraBag ?? 0);
+        prasadItems.bag.eligible += eligBag;
+        prasadItems.bag.given += distBag + extBag;
+        prasadItems.bag.rem += Math.max(0, eligBag - distBag);
+
+        const eligSmall = toNumber(dist.eligibleSmall ?? 0);
+        const distSmall = toNumber(dist.distributedSmall ?? 0);
+        const extSmall = toNumber(dist.extraSmall ?? 0);
+        prasadItems.smallBox.eligible += eligSmall;
+        prasadItems.smallBox.given += distSmall + extSmall;
+        prasadItems.smallBox.rem += Math.max(0, eligSmall - distSmall);
+
+        const eligBig = toNumber(dist.eligibleBig ?? 0);
+        const distBig = toNumber(dist.distributedBig ?? 0);
+        const extBig = toNumber(dist.extraBig ?? 0);
+        prasadItems.bigBox.eligible += eligBig;
+        prasadItems.bigBox.given += distBig + extBig;
+        prasadItems.bigBox.rem += Math.max(0, eligBig - distBig);
+
+        const eligBisc = toNumber(dist.eligibleBiscuit ?? 0);
+        const distBisc = toNumber(dist.distributedBiscuit ?? 0);
+        const extBisc = toNumber(dist.extraBiscuit ?? 0);
+        prasadItems.biscuitBox.eligible += eligBisc;
+        prasadItems.biscuitBox.given += distBisc + extBisc;
+        prasadItems.biscuitBox.rem += Math.max(0, eligBisc - distBisc);
+
+        const eligChoc = toNumber(dist.eligibleChocolate ?? 0);
+        const distChoc = toNumber(dist.distributedChocolate ?? 0);
+        const extChoc = toNumber(dist.extraChocolate ?? 0);
+        prasadItems.chocolateBox.eligible += eligChoc;
+        prasadItems.chocolateBox.given += distChoc + extChoc;
+        prasadItems.chocolateBox.rem += Math.max(0, eligChoc - distChoc);
+      }
+    }
+  } catch (prasadError) {
+    // If a Prisma table/column mismatch occurs, log clearly and preserve other stats
+    console.warn(
+      '[DashboardService] PrasadDistribution calculation failed safely:',
+      (prasadError as Error)?.message || prasadError
+    );
   }
 
-  const distSum = totalBoxesDistributedAgg._sum;
   const totalDistributedBoxes =
-    (distSum.distributedBag ?? 0) +
-    (distSum.distributedSmall ?? 0) +
-    (distSum.distributedBig ?? 0) +
-    (distSum.distributedBiscuit ?? 0) +
-    (distSum.distributedChocolate ?? 0) +
-    (distSum.extraBag ?? 0) +
-    (distSum.extraSmall ?? 0) +
-    (distSum.extraBig ?? 0) +
-    (distSum.extraBiscuit ?? 0) +
-    (distSum.extraChocolate ?? 0);
+    prasadItems.bag.given +
+    prasadItems.smallBox.given +
+    prasadItems.bigBox.given +
+    prasadItems.biscuitBox.given +
+    prasadItems.chocolateBox.given;
 
   const monthlyMap = new Map<string, { label: string; count: number; amount: number }>();
   const monthlyKeys: string[] = [];
@@ -196,6 +249,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       totalEligibleBoxes,
       totalDistributedBoxes,
       balanceBoxes: Math.max(0, totalEligibleBoxes - totalDistributedBoxes),
+      items: prasadItems,
     },
     recentActivity,
     charts: {

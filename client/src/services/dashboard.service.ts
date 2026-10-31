@@ -10,10 +10,25 @@ export interface DashboardOverview {
   totalReceiptsCount: number;
 }
 
+export interface PrasadItemCounters {
+  eligible: number;
+  given: number;
+  rem: number;
+}
+
+export interface PrasadItemsBreakdown {
+  bag: PrasadItemCounters;
+  smallBox: PrasadItemCounters;
+  bigBox: PrasadItemCounters;
+  biscuitBox: PrasadItemCounters;
+  chocolateBox: PrasadItemCounters;
+}
+
 export interface PrasadSummary {
   totalEligibleBoxes: number;
   totalDistributedBoxes: number;
   balanceBoxes: number;
+  items: PrasadItemsBreakdown;
 }
 
 export interface ActivityItem {
