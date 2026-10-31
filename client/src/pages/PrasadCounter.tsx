@@ -7,6 +7,7 @@ import {
 import {
   AlertCircle,
   Check,
+  ClipboardList,
   FileSpreadsheet,
   HandHeart,
   Loader2,
@@ -22,10 +23,19 @@ import type { AxiosError } from 'axios';
 import type { ApiError } from '../types/auth';
 
 interface PrasadItemCounts {
+  bag: number;
   small: number;
   big: number;
   biscuit: number;
   chocolate: number;
+}
+
+interface SlabCounts {
+  slab1: number;
+  slab2: number;
+  slab3: number;
+  slab4: number;
+  slab5: number;
 }
 
 type ItemKey = keyof PrasadItemCounts;
@@ -44,7 +54,9 @@ interface PrasadBookRow {
   receiptCount: number;
   eligible: PrasadItemCounts;
   distributed: PrasadItemCounts;
+  extra: PrasadItemCounts;
   remaining: PrasadItemCounts;
+  slabCounts: SlabCounts;
   collectedByName: string | null;
   collectedByMobile: string | null;
   distributedBy: string | null;
@@ -63,6 +75,7 @@ interface PrasadSummaryResponse {
   success: boolean;
   data: PrasadBookRow[];
   summary: {
+    bag: ItemTotals;
     smallBox: ItemTotals;
     bigBox: ItemTotals;
     biscuitBox: ItemTotals;
@@ -86,11 +99,18 @@ type StatusTab = 'ALL' | 'PENDING' | 'COMPLETED';
 
 const ITEM_META: Array<{
   key: ItemKey;
-  summaryKey: 'smallBox' | 'bigBox' | 'biscuitBox' | 'chocolateBox';
+  summaryKey: 'bag' | 'smallBox' | 'bigBox' | 'biscuitBox' | 'chocolateBox';
   label: string;
   gujarati: string;
   cardClass: string;
 }> = [
+  {
+    key: 'bag',
+    summaryKey: 'bag',
+    label: 'Bag',
+    gujarati: 'થેલી',
+    cardClass: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+  },
   {
     key: 'small',
     summaryKey: 'smallBox',
@@ -120,6 +140,133 @@ const ITEM_META: Array<{
     cardClass: 'border-purple-100 bg-purple-50 text-purple-700',
   },
 ];
+
+const ITEM_PLURAL: Record<ItemKey, string> = {
+  bag: 'Bags',
+  small: 'Small Boxes',
+  big: 'Big Boxes',
+  biscuit: 'Biscuit Boxes',
+  chocolate: 'Chocolate Boxes',
+};
+
+const ITEM_GUJARATI: Record<ItemKey, string> = {
+  bag: 'થેલી',
+  small: 'નાનો બોક્સ',
+  big: 'મોટો બોક્સ',
+  biscuit: 'બિસ્કિટ બોક્સ',
+  chocolate: 'ચોકલેટ બોક્સ',
+};
+
+const SLAB_META: Array<{
+  key: keyof SlabCounts;
+  label: string;
+  range: string;
+  grants: ItemKey[];
+}> = [
+  { key: 'slab1', label: 'Slab 1', range: '₹1 - ₹249', grants: ['bag'] },
+  { key: 'slab2', label: 'Slab 2', range: '₹250 - ₹499', grants: ['small'] },
+  { key: 'slab3', label: 'Slab 3', range: '₹500 - ₹1,000', grants: ['big'] },
+  { key: 'slab4', label: 'Slab 4', range: '₹1,001 - ₹4,999', grants: ['big', 'biscuit'] },
+  {
+    key: 'slab5',
+    label: 'Slab 5',
+    range: '₹5,000 - ₹20,000+',
+    grants: ['big', 'biscuit', 'chocolate'],
+  },
+];
+
+interface BreakdownModalProps {
+  row: PrasadBookRow;
+  onClose: () => void;
+}
+
+function BreakdownModal({ row, onClose }: BreakdownModalProps): ReactElement {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
+              <ClipboardList size={20} className="text-amber-600" />
+              Prasad Allocation Details / પ્રસાદ ગણતરી વિગત
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              <span className="font-mono font-semibold text-amber-600">{row.sevakCode}</span>{' '}
+              {row.sevakName} · Book{' '}
+              <span className="font-semibold text-slate-700">{row.bookNumber}</span>
+              {row.sahSevakName && (
+                <>
+                  {' '}
+                  · Sah-Sevak: {row.sahSevakName}
+                  {row.sahSevakMobile ? ` (${row.sahSevakMobile})` : ''}
+                </>
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {SLAB_META.map((slab) => {
+            const count = row.slabCounts[slab.key];
+            const active = count > 0;
+            return (
+              <div
+                key={slab.key}
+                className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-lg border px-3 py-2 text-sm ${
+                  active
+                    ? 'border-amber-200 bg-amber-50 font-semibold text-slate-800'
+                    : 'border-slate-100 bg-slate-50/60 text-slate-400'
+                }`}
+              >
+                <span className={active ? 'font-bold text-amber-700' : 'font-semibold'}>
+                  {slab.label}
+                </span>
+                <span>({slab.range})</span>
+                <span className={active ? 'text-amber-400' : 'text-slate-300'}>:</span>
+                <span>
+                  {count} receipt{count === 1 ? '' : 's'}
+                </span>
+                <span className={active ? 'text-amber-500' : 'text-slate-300'}>➔</span>
+                <span className={active ? 'font-bold text-slate-800' : ''}>
+                  {slab.grants
+                    .map(
+                      (item) =>
+                        `${count} ${ITEM_PLURAL[item]} (${ITEM_GUJARATI[item]})`
+                    )
+                    .join(' + ')}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ItemBadge({
   label,
@@ -155,26 +302,31 @@ function QtyStepper({
   label,
   value,
   max,
+  extra,
   onChange,
+  onExtraChange,
 }: {
   label: string;
   value: number;
   max: number;
+  extra: number;
   onChange: (next: number) => void;
+  onExtraChange: (next: number) => void;
 }): ReactElement {
   const clamp = (v: number): number => Math.min(max, Math.max(0, Number.isNaN(v) ? 0 : v));
+  const clampExtra = (v: number): number => Math.max(0, Number.isNaN(v) ? 0 : v);
   return (
     <div className="rounded-lg border border-slate-200 p-3">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-sm font-medium text-slate-700">{label}</p>
         <span className="text-xs text-slate-500">max {max}</span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-center gap-1">
         <button
           type="button"
           onClick={() => onChange(clamp(value - 1))}
           disabled={value <= 0}
-          className="rounded-lg border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 disabled:opacity-40"
           aria-label={`Decrease ${label}`}
         >
           <Minus size={14} />
@@ -187,17 +339,35 @@ function QtyStepper({
           onChange={(e: ChangeEvent<HTMLInputElement>) =>
             onChange(clamp(parseInt(e.target.value, 10)))
           }
-          className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className="h-8 w-16 min-w-[60px] shrink-0 rounded-lg border border-gray-200 text-center text-base font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
         <button
           type="button"
           onClick={() => onChange(clamp(value + 1))}
           disabled={value >= max}
-          className="rounded-lg border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 disabled:opacity-40"
           aria-label={`Increase ${label}`}
         >
           <Plus size={14} />
         </button>
+      </div>
+      <div className="mt-2 border-t border-dashed border-slate-200 pt-2">
+        <label className="mb-1 block text-[11px] font-medium text-slate-500">
+          Extra / વધારાનું
+        </label>
+        <input
+          type="number"
+          min={0}
+          value={extra}
+          onChange={(e: ChangeEvent<HTMLInputElement>) =>
+            onExtraChange(clampExtra(parseInt(e.target.value, 10)))
+          }
+          className="w-full rounded-lg border border-slate-300 px-2 py-1 text-center text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
+          aria-label={`Extra ${label}`}
+        />
+        <p className="mt-1 text-center text-[11px] text-slate-500">
+          Total: <span className="font-semibold text-slate-700">{value + extra}</span>
+        </p>
       </div>
     </div>
   );
@@ -214,6 +384,14 @@ function DistributeModal({ row, onClose, onSaved }: DistributeModalProps): React
   const [collectedByMobile, setCollectedByMobile] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [quantities, setQuantities] = useState<PrasadItemCounts>({
+    bag: 0,
+    small: 0,
+    big: 0,
+    biscuit: 0,
+    chocolate: 0,
+  });
+  const [extras, setExtras] = useState<PrasadItemCounts>({
+    bag: 0,
     small: 0,
     big: 0,
     biscuit: 0,
@@ -222,12 +400,20 @@ function DistributeModal({ row, onClose, onSaved }: DistributeModalProps): React
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
-  const totalToGive =
-    quantities.small + quantities.big + quantities.biscuit + quantities.chocolate;
+  const standardTotal =
+    quantities.bag + quantities.small + quantities.big + quantities.biscuit + quantities.chocolate;
+  const extraTotal =
+    extras.bag + extras.small + extras.big + extras.biscuit + extras.chocolate;
+  const totalToGive = standardTotal + extraTotal;
   const mobileDigits = collectedByMobile.replace(/\D/g, '');
 
   const setQty = (key: ItemKey, value: number): void => {
     setQuantities((prev) => ({ ...prev, [key]: value }));
+    setError('');
+  };
+
+  const setExtra = (key: ItemKey, value: number): void => {
+    setExtras((prev) => ({ ...prev, [key]: value }));
     setError('');
   };
 
@@ -262,10 +448,16 @@ function DistributeModal({ row, onClose, onSaved }: DistributeModalProps): React
       await api.post('/api/v1/prasad/distribute', {
         sevakId: row.sevakId,
         bookNumber: row.bookNumber,
+        distributedBag: quantities.bag,
         distributedSmall: quantities.small,
         distributedBig: quantities.big,
         distributedBiscuit: quantities.biscuit,
         distributedChocolate: quantities.chocolate,
+        extraBag: extras.bag,
+        extraSmall: extras.small,
+        extraBig: extras.big,
+        extraBiscuit: extras.biscuit,
+        extraChocolate: extras.chocolate,
         collectedByName: collectedByName.trim() || undefined,
         collectedByMobile: collectedByMobile.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -286,7 +478,7 @@ function DistributeModal({ row, onClose, onSaved }: DistributeModalProps): React
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
-      <div className="my-8 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+      <div className="my-8 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-800">
@@ -378,32 +570,54 @@ function DistributeModal({ row, onClose, onSaved }: DistributeModalProps): React
                 Fill All Remaining / બધું બાકી આપો
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <QtyStepper
+                label="Bag"
+                value={quantities.bag}
+                max={row.remaining.bag}
+                extra={extras.bag}
+                onChange={(v) => setQty('bag', v)}
+                onExtraChange={(v) => setExtra('bag', v)}
+              />
               <QtyStepper
                 label="Small Box"
                 value={quantities.small}
                 max={row.remaining.small}
+                extra={extras.small}
                 onChange={(v) => setQty('small', v)}
+                onExtraChange={(v) => setExtra('small', v)}
               />
               <QtyStepper
                 label="Big Box"
                 value={quantities.big}
                 max={row.remaining.big}
+                extra={extras.big}
                 onChange={(v) => setQty('big', v)}
+                onExtraChange={(v) => setExtra('big', v)}
               />
               <QtyStepper
                 label="Biscuit Box"
                 value={quantities.biscuit}
                 max={row.remaining.biscuit}
+                extra={extras.biscuit}
                 onChange={(v) => setQty('biscuit', v)}
+                onExtraChange={(v) => setExtra('biscuit', v)}
               />
               <QtyStepper
                 label="Chocolate Box"
                 value={quantities.chocolate}
                 max={row.remaining.chocolate}
+                extra={extras.chocolate}
                 onChange={(v) => setQty('chocolate', v)}
+                onExtraChange={(v) => setExtra('chocolate', v)}
               />
             </div>
+            {extraTotal > 0 && (
+              <p className="mt-2 text-xs text-amber-600">
+                {extraTotal} extra item{extraTotal === 1 ? '' : 's'} will be recorded beyond the
+                eligible quota.
+              </p>
+            )}
           </div>
 
           <div>
@@ -472,6 +686,8 @@ export default function PrasadCounter(): ReactElement {
   const [error, setError] = useState('');
   const [alert, setAlert] = useState<AlertState | null>(null);
   const [activeRow, setActiveRow] = useState<PrasadBookRow | null>(null);
+  const [selectedBreakdownBook, setSelectedBreakdownBook] =
+    useState<PrasadBookRow | null>(null);
 
   const hasActiveSearch = Boolean(
     searchQuery.trim() || selectedMandal !== 'ALL' || statusFilter !== 'ALL'
@@ -581,7 +797,11 @@ export default function PrasadCounter(): ReactElement {
   };
 
   const remainingTotal = (row: PrasadBookRow): number =>
-    row.remaining.small + row.remaining.big + row.remaining.biscuit + row.remaining.chocolate;
+    row.remaining.bag +
+    row.remaining.small +
+    row.remaining.big +
+    row.remaining.biscuit +
+    row.remaining.chocolate;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -621,7 +841,7 @@ export default function PrasadCounter(): ReactElement {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {ITEM_META.map((meta) => {
           const totals = summary?.[meta.summaryKey] ?? { eligible: 0, given: 0, remaining: 0 };
           return (
@@ -786,31 +1006,47 @@ export default function PrasadCounter(): ReactElement {
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <ItemBadge
-                        label="Small Box"
-                        eligible={row.eligible.small}
-                        given={row.distributed.small}
-                        remaining={row.remaining.small}
-                      />
-                      <ItemBadge
-                        label="Big Box"
-                        eligible={row.eligible.big}
-                        given={row.distributed.big}
-                        remaining={row.remaining.big}
-                      />
-                      <ItemBadge
-                        label="Biscuit Box"
-                        eligible={row.eligible.biscuit}
-                        given={row.distributed.biscuit}
-                        remaining={row.remaining.biscuit}
-                      />
-                      <ItemBadge
-                        label="Chocolate Box"
-                        eligible={row.eligible.chocolate}
-                        given={row.distributed.chocolate}
-                        remaining={row.remaining.chocolate}
-                      />
+                    <div>
+                      <div className="flex flex-wrap gap-2">
+                        <ItemBadge
+                          label="Bag"
+                          eligible={row.eligible.bag}
+                          given={row.distributed.bag + row.extra.bag}
+                          remaining={row.remaining.bag}
+                        />
+                        <ItemBadge
+                          label="Small Box"
+                          eligible={row.eligible.small}
+                          given={row.distributed.small + row.extra.small}
+                          remaining={row.remaining.small}
+                        />
+                        <ItemBadge
+                          label="Big Box"
+                          eligible={row.eligible.big}
+                          given={row.distributed.big + row.extra.big}
+                          remaining={row.remaining.big}
+                        />
+                        <ItemBadge
+                          label="Biscuit Box"
+                          eligible={row.eligible.biscuit}
+                          given={row.distributed.biscuit + row.extra.biscuit}
+                          remaining={row.remaining.biscuit}
+                        />
+                        <ItemBadge
+                          label="Chocolate Box"
+                          eligible={row.eligible.chocolate}
+                          given={row.distributed.chocolate + row.extra.chocolate}
+                          remaining={row.remaining.chocolate}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBreakdownBook(row)}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100"
+                      >
+                        <ClipboardList size={13} />
+                        View Allocation Details / પ્રસાદ વિગત જુઓ
+                      </button>
                     </div>
 
                     <div className="min-w-[160px]">
@@ -833,11 +1069,15 @@ export default function PrasadCounter(): ReactElement {
                       <button
                         type="button"
                         onClick={() => setActiveRow(row)}
-                        disabled={remainingTotal(row) === 0}
-                        className="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 xl:w-auto"
+                        className="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-700 xl:w-auto"
                       >
                         Distribute / આપો
                       </button>
+                      {remainingTotal(row) === 0 && (
+                        <p className="mt-1 text-center text-[11px] text-slate-400 xl:text-left">
+                          Quota complete — extras only
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -866,6 +1106,13 @@ export default function PrasadCounter(): ReactElement {
             Search by Sevak Code (e.g. nb202605), Name, Mobile, Sah-Sevak, or Book No to view prasad distribution details.
           </p>
         </div>
+      )}
+
+      {selectedBreakdownBook && (
+        <BreakdownModal
+          row={selectedBreakdownBook}
+          onClose={() => setSelectedBreakdownBook(null)}
+        />
       )}
 
       {activeRow && (

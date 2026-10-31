@@ -78,10 +78,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.sevaReceipt.count(),
     prisma.prasadDistribution.aggregate({
       _sum: {
+        distributedBag: true,
         distributedSmall: true,
         distributedBig: true,
         distributedBiscuit: true,
         distributedChocolate: true,
+        extraBag: true,
+        extraSmall: true,
+        extraBig: true,
+        extraBiscuit: true,
+        extraChocolate: true,
       },
     }),
     prisma.sevaReceipt.findMany({
@@ -114,15 +120,22 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   let totalEligibleBoxes = 0;
   for (const receipt of allReceipts) {
     const items = computePrasadItems(toNumber(receipt.amount));
-    totalEligibleBoxes += items.small + items.big + items.biscuit + items.chocolate;
+    totalEligibleBoxes +=
+      items.bag + items.small + items.big + items.biscuit + items.chocolate;
   }
 
   const distSum = totalBoxesDistributedAgg._sum;
   const totalDistributedBoxes =
+    (distSum.distributedBag ?? 0) +
     (distSum.distributedSmall ?? 0) +
     (distSum.distributedBig ?? 0) +
     (distSum.distributedBiscuit ?? 0) +
-    (distSum.distributedChocolate ?? 0);
+    (distSum.distributedChocolate ?? 0) +
+    (distSum.extraBag ?? 0) +
+    (distSum.extraSmall ?? 0) +
+    (distSum.extraBig ?? 0) +
+    (distSum.extraBiscuit ?? 0) +
+    (distSum.extraChocolate ?? 0);
 
   const monthlyMap = new Map<string, { label: string; count: number; amount: number }>();
   const monthlyKeys: string[] = [];

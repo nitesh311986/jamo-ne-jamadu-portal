@@ -121,26 +121,35 @@ model PrasadDistribution {
   id                    String    @id @default(uuid())
   sevakId               String
   sevak                 Sevak     @relation(fields: [sevakId], references: [id], onDelete: Cascade)
-  bookNumber            String?   // Track per book allocation (e.g. "1", "2")
-  
-  // Eligible item quantities (calculated from receipts in book)
-  eligibleSmall         Int       @default(0) // Small Box
-  eligibleBig           Int       @default(0) // Big Box
-  eligibleBiscuit       Int       @default(0) // Biscuit Box
-  eligibleChocolate     Int       @default(0) // Chocolate Box
+  bookNumber            String?   // Track per book
 
-  // Actually distributed physical quantities
-  distributedSmall      Int       @default(0) // Small Box
-  distributedBig        Int       @default(0) // Big Box
-  distributedBiscuit    Int       @default(0) // Biscuit Box
-  distributedChocolate  Int       @default(0) // Chocolate Box
+  // Eligible item quantities (calculated strictly from receipt slabs)
+  eligibleBag           Int       @default(0) // Slab 1 (₹1 - ₹249)
+  eligibleSmall         Int       @default(0) // Slab 2 (₹250 - ₹499)
+  eligibleBig           Int       @default(0) // Slabs 3, 4, 5
+  eligibleBiscuit       Int       @default(0) // Slabs 4, 5
+  eligibleChocolate     Int       @default(0) // Slab 5 (₹5,000 - ₹20,000+)
 
-  // Third-Party / Representative Collector Tracking
-  collectedByName       String?   // Name of person picking up (Sevak, Sah-Sevak, or other representative)
-  collectedByMobile     String?   // Mobile of person picking up
+  // Standard distributed quantities (up to eligible)
+  distributedBag        Int       @default(0)
+  distributedSmall      Int       @default(0)
+  distributedBig        Int       @default(0)
+  distributedBiscuit    Int       @default(0)
+  distributedChocolate  Int       @default(0)
+
+  // Extra manual allocations (given beyond eligible quota)
+  extraBag              Int       @default(0)
+  extraSmall            Int       @default(0)
+  extraBig              Int       @default(0)
+  extraBiscuit          Int       @default(0)
+  extraChocolate        Int       @default(0)
+
+  // Third-Party Collector Details
+  collectedByName       String?
+  collectedByMobile     String?
 
   distributedAt         DateTime?
-  distributedBy         String?   // Volunteer user who operated desk
+  distributedBy         String?
   notes                 String?
   updatedAt             DateTime  @updatedAt
 

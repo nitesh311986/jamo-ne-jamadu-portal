@@ -37,15 +37,17 @@ Eligibility is computed **per receipt**, then summed per book.
 
 | Slab | Receipt Amount | Prasad Items |
 |------|----------------|--------------|
-| 1 | ₹1 – ₹499 | 1 Small Box |
-| 2 | ₹500 – ₹1,000 | 1 Big Box |
-| 3 | ₹1,001 – ₹4,999 | 1 Big Box + 1 Biscuit Box |
-| 4 | ₹5,000+ | 1 Big Box + 1 Chocolate Box + 1 Biscuit Box |
+| 1 | ₹1 – ₹249 | 1 Bag (થેલી) |
+| 2 | ₹250 – ₹499 | 1 Small Box |
+| 3 | ₹500 – ₹1,000 | 1 Big Box |
+| 4 | ₹1,001 – ₹4,999 | 1 Big Box + 1 Biscuit Box |
+| 5 | ₹5,000 – ₹20,000+ | 1 Big Box + 1 Biscuit Box + 1 Chocolate Box |
 
 ### Formulas
 - `eligible[item]` per book = sum of item counts across that book's receipts.
-- `remaining[item]` = `max(0, eligible - distributed)`.
-- Row status = `COMPLETED` when all four remaining counts are 0, else `PENDING`.
+- `remaining[item]` = `max(0, eligible - distributed)` — `extra*` allocations do not consume quota.
+- `given[item]` = `distributed + extra` (extras are recorded beyond the eligible quota).
+- Row status = `COMPLETED` when all five remaining counts are 0, else `PENDING`.
 
 ## 3. API Endpoints
 
@@ -60,10 +62,16 @@ Eligibility is computed **per receipt**, then summed per book.
 {
   "sevakId": "uuid",
   "bookNumber": "12",
+  "distributedBag": 0,
   "distributedSmall": 0,
   "distributedBig": 1,
   "distributedBiscuit": 1,
   "distributedChocolate": 0,
+  "extraBag": 0,
+  "extraSmall": 0,
+  "extraBig": 0,
+  "extraBiscuit": 0,
+  "extraChocolate": 0,
   "collectedByName": "Representative Name",
   "collectedByMobile": "9876543210",
   "notes": "optional"
@@ -74,8 +82,8 @@ Response: `{ "success": true, "message": "Prasad distributed successfully", "dat
 
 ## 4. Validation and Over-allocation Protection
 
-- Quantities are **increments** — each call adds to the stored `distributed*` counts.
-- The API rejects any item whose requested count exceeds `eligible - distributed` for that book with HTTP 400.
+- Quantities are **increments** — each call adds to the stored `distributed*` and `extra*` counts.
+- The API rejects any `distributed*` item whose requested count exceeds `eligible - distributed` for that book with HTTP 400. `extra*` quantities are uncapped non-negative integers recorded beyond quota.
 - All validation and the upsert run inside a single Prisma `$transaction`.
 - `distributedAt` is set to the current time and `distributedBy` to the authenticated volunteer (`fullName`/`email`).
 - An `AuditLog` entry (`PRASAD_DISTRIBUTE`) is written after each successful handover.
@@ -83,8 +91,9 @@ Response: `{ "success": true, "message": "Prasad distributed successfully", "dat
 
 ## 5. Excel Export
 
-`GET /api/v1/prasad/export` streams a single-sheet workbook with 16 columns:
-Sevak Code, Sevak Name, Sevak Mobile, Mandal, Book Number, Sah-Sevak Name, Sah-Sevak Mobile, Small Box (E/G/R), Big Box (E/G/R), Biscuit Box (E/G/R), Chocolate Box (E/G/R), Picked Up By (Name), Picked Up By (Mobile), Status, Dispensed By, Dispensed At.
+`GET /api/v1/prasad/export` streams a single-sheet workbook with 17 columns:
+Sevak Code, Sevak Name, Sevak Mobile, Mandal, Book Number, Sah-Sevak Name, Sah-Sevak Mobile, Bag (E/G/R), Small Box (E/G/R), Big Box (E/G/R), Biscuit Box (E/G/R), Chocolate Box (E/G/R), Picked Up By (Name), Picked Up By (Mobile), Status, Dispensed By, Dispensed At.
+In the export, the Given figure includes extras.
 
 It accepts the same query filters as `/prasad/summary`.
 

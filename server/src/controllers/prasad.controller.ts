@@ -52,6 +52,7 @@ function compareBookNumbers(a: string, b: string): number {
 
 function isPendingBook(row: PrasadBookRow): boolean {
   return (
+    row.remaining.bag > 0 ||
     row.remaining.small > 0 ||
     row.remaining.big > 0 ||
     row.remaining.biscuit > 0 ||
@@ -71,6 +72,7 @@ function sortPendingBooksFirst(a: PrasadBookRow, b: PrasadBookRow): number {
 
 function computePrasadSummary(rows: PrasadBookRow[]): PrasadSummaryTotals {
   const summary: PrasadSummaryTotals = {
+    bag: { eligible: 0, given: 0, remaining: 0 },
     smallBox: { eligible: 0, given: 0, remaining: 0 },
     bigBox: { eligible: 0, given: 0, remaining: 0 },
     biscuitBox: { eligible: 0, given: 0, remaining: 0 },
@@ -78,6 +80,7 @@ function computePrasadSummary(rows: PrasadBookRow[]): PrasadSummaryTotals {
   };
 
   const itemKeys = [
+    ['bag', 'bag'],
     ['smallBox', 'small'],
     ['bigBox', 'big'],
     ['biscuitBox', 'biscuit'],
@@ -87,7 +90,7 @@ function computePrasadSummary(rows: PrasadBookRow[]): PrasadSummaryTotals {
   for (const row of rows) {
     for (const [totalKey, itemKey] of itemKeys) {
       summary[totalKey].eligible += row.eligible[itemKey];
-      summary[totalKey].given += row.distributed[itemKey];
+      summary[totalKey].given += row.distributed[itemKey] + row.extra[itemKey];
       summary[totalKey].remaining += row.remaining[itemKey];
     }
   }
@@ -172,16 +175,23 @@ export async function getPrasadSummary(req: Request, res: Response): Promise<voi
 interface DistributeBody {
   sevakId: string;
   bookNumber: string;
+  distributedBag?: number;
   distributedSmall?: number;
   distributedBig?: number;
   distributedBiscuit?: number;
   distributedChocolate?: number;
+  extraBag?: number;
+  extraSmall?: number;
+  extraBig?: number;
+  extraBiscuit?: number;
+  extraChocolate?: number;
   collectedByName?: string;
   collectedByMobile?: string;
   notes?: string;
 }
 
 const ITEM_FIELDS = [
+  { bodyKey: 'distributedBag', itemKey: 'bag', label: 'Bag' },
   { bodyKey: 'distributedSmall', itemKey: 'small', label: 'Small Box' },
   { bodyKey: 'distributedBig', itemKey: 'big', label: 'Big Box' },
   { bodyKey: 'distributedBiscuit', itemKey: 'biscuit', label: 'Biscuit Box' },
@@ -212,13 +222,33 @@ export async function distributePrasad(req: Request, res: Response): Promise<voi
     }
 
     const issue: PrasadItems = {
+      bag: parseQuantity(body.distributedBag, 'Bag'),
       small: parseQuantity(body.distributedSmall, 'Small Box'),
       big: parseQuantity(body.distributedBig, 'Big Box'),
       biscuit: parseQuantity(body.distributedBiscuit, 'Biscuit Box'),
       chocolate: parseQuantity(body.distributedChocolate, 'Chocolate Box'),
     };
+    const extras: PrasadItems = {
+      bag: parseQuantity(body.extraBag, 'Extra Bag'),
+      small: parseQuantity(body.extraSmall, 'Extra Small Box'),
+      big: parseQuantity(body.extraBig, 'Extra Big Box'),
+      biscuit: parseQuantity(body.extraBiscuit, 'Extra Biscuit Box'),
+      chocolate: parseQuantity(body.extraChocolate, 'Extra Chocolate Box'),
+    };
 
-    if (issue.small + issue.big + issue.biscuit + issue.chocolate === 0) {
+    const totalItems =
+      issue.bag +
+      issue.small +
+      issue.big +
+      issue.biscuit +
+      issue.chocolate +
+      extras.bag +
+      extras.small +
+      extras.big +
+      extras.biscuit +
+      extras.chocolate;
+
+    if (totalItems === 0) {
       res
         .status(400)
         .json({ success: false, error: 'At least one item quantity must be greater than zero' });
@@ -260,6 +290,7 @@ export async function distributePrasad(req: Request, res: Response): Promise<voi
         where: { sevakId_bookNumber: { sevakId, bookNumber } },
       });
       const alreadyGiven: PrasadItems = {
+        bag: existing?.distributedBag ?? 0,
         small: existing?.distributedSmall ?? 0,
         big: existing?.distributedBig ?? 0,
         biscuit: existing?.distributedBiscuit ?? 0,
@@ -280,14 +311,21 @@ export async function distributePrasad(req: Request, res: Response): Promise<voi
       return tx.prasadDistribution.upsert({
         where: { sevakId_bookNumber: { sevakId, bookNumber } },
         update: {
+          eligibleBag: eligible.bag,
           eligibleSmall: eligible.small,
           eligibleBig: eligible.big,
           eligibleBiscuit: eligible.biscuit,
           eligibleChocolate: eligible.chocolate,
+          distributedBag: { increment: issue.bag },
           distributedSmall: { increment: issue.small },
           distributedBig: { increment: issue.big },
           distributedBiscuit: { increment: issue.biscuit },
           distributedChocolate: { increment: issue.chocolate },
+          extraBag: { increment: extras.bag },
+          extraSmall: { increment: extras.small },
+          extraBig: { increment: extras.big },
+          extraBiscuit: { increment: extras.biscuit },
+          extraChocolate: { increment: extras.chocolate },
           collectedByName,
           collectedByMobile: collectedByMobileRaw,
           notes,
@@ -297,14 +335,21 @@ export async function distributePrasad(req: Request, res: Response): Promise<voi
         create: {
           sevakId,
           bookNumber,
+          eligibleBag: eligible.bag,
           eligibleSmall: eligible.small,
           eligibleBig: eligible.big,
           eligibleBiscuit: eligible.biscuit,
           eligibleChocolate: eligible.chocolate,
+          distributedBag: issue.bag,
           distributedSmall: issue.small,
           distributedBig: issue.big,
           distributedBiscuit: issue.biscuit,
           distributedChocolate: issue.chocolate,
+          extraBag: extras.bag,
+          extraSmall: extras.small,
+          extraBig: extras.big,
+          extraBiscuit: extras.biscuit,
+          extraChocolate: extras.chocolate,
           collectedByName,
           collectedByMobile: collectedByMobileRaw,
           notes,
@@ -318,10 +363,16 @@ export async function distributePrasad(req: Request, res: Response): Promise<voi
     await logAuditEvent(actorId, 'PRASAD_DISTRIBUTE', {
       sevakId,
       bookNumber,
+      distributedBag: issue.bag,
       distributedSmall: issue.small,
       distributedBig: issue.big,
       distributedBiscuit: issue.biscuit,
       distributedChocolate: issue.chocolate,
+      extraBag: extras.bag,
+      extraSmall: extras.small,
+      extraBig: extras.big,
+      extraBiscuit: extras.biscuit,
+      extraChocolate: extras.chocolate,
       collectedByName,
       collectedByMobile: collectedByMobileRaw,
     });
@@ -371,6 +422,7 @@ export async function exportPrasadExcel(req: Request, res: Response): Promise<vo
       { header: 'Book Number', key: 'bookNumber', width: 14 },
       { header: 'Sah-Sevak Name', key: 'sahSevakName', width: 26 },
       { header: 'Sah-Sevak Mobile', key: 'sahSevakMobile', width: 18 },
+      { header: 'Bag (Eligible / Given / Remaining)', key: 'bag', width: 26 },
       { header: 'Small Box (Eligible / Given / Remaining)', key: 'smallBox', width: 26 },
       { header: 'Big Box (Eligible / Given / Remaining)', key: 'bigBox', width: 26 },
       { header: 'Biscuit Box (Eligible / Given / Remaining)', key: 'biscuitBox', width: 26 },
@@ -408,12 +460,29 @@ export async function exportPrasadExcel(req: Request, res: Response): Promise<vo
         bookNumber: row.bookNumber,
         sahSevakName: row.sahSevakName ?? '',
         sahSevakMobile: row.sahSevakMobile ?? '',
-        smallBox: formatItem(row.eligible.small, row.distributed.small, row.remaining.small),
-        bigBox: formatItem(row.eligible.big, row.distributed.big, row.remaining.big),
-        biscuitBox: formatItem(row.eligible.biscuit, row.distributed.biscuit, row.remaining.biscuit),
+        bag: formatItem(
+          row.eligible.bag,
+          row.distributed.bag + row.extra.bag,
+          row.remaining.bag
+        ),
+        smallBox: formatItem(
+          row.eligible.small,
+          row.distributed.small + row.extra.small,
+          row.remaining.small
+        ),
+        bigBox: formatItem(
+          row.eligible.big,
+          row.distributed.big + row.extra.big,
+          row.remaining.big
+        ),
+        biscuitBox: formatItem(
+          row.eligible.biscuit,
+          row.distributed.biscuit + row.extra.biscuit,
+          row.remaining.biscuit
+        ),
         chocolateBox: formatItem(
           row.eligible.chocolate,
-          row.distributed.chocolate,
+          row.distributed.chocolate + row.extra.chocolate,
           row.remaining.chocolate
         ),
         collectedByName: row.collectedByName ?? '',
