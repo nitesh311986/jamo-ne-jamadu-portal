@@ -344,6 +344,21 @@ export async function searchSevaks(req: Request, res: Response): Promise<void> {
           { mobile: { startsWith: rawQuery } },
           { altMobile: { startsWith: rawQuery } },
           { fullName: { contains: rawQuery, mode: 'insensitive' as const } },
+          {
+            assignedBooks: {
+              some: {
+                OR: [
+                  {
+                    sahSevakName: {
+                      contains: rawQuery,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  { sahSevakMobile: { startsWith: rawQuery } },
+                ],
+              },
+            },
+          },
         ],
       }
     : {};

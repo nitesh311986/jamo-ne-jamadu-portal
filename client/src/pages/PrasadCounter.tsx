@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useState,
   type ChangeEvent,
   type ReactElement,
@@ -7,8 +8,11 @@ import {
 import {
   AlertCircle,
   Check,
+  ChevronDown,
+  ChevronUp,
   ClipboardList,
   FileSpreadsheet,
+  Gift,
   HandHeart,
   Loader2,
   Minus,
@@ -18,6 +22,10 @@ import {
   X,
 } from 'lucide-react';
 import api from '../api/axios';
+import AllocateGiftModal from '../components/prasad/AllocateGiftModal';
+import SevakPrasadSummaryModal, {
+  InlineSevakSlabSummary,
+} from '../components/prasad/SevakPrasadSummaryModal';
 import PaginationControls from '../components/common/PaginationControls';
 import type { AxiosError } from 'axios';
 import type { ApiError } from '../types/auth';
@@ -71,6 +79,18 @@ interface ItemTotals {
   remaining: number;
 }
 
+interface GiftSummary {
+  sevakCount: number;
+  sahSevakCount: number;
+  totalRecipients: number;
+  eligibleBiscuit: number;
+  eligibleChocolate: number;
+  totalBiscuitGiven: number;
+  totalChocolateGiven: number;
+  sevakGiftCount: number;
+  sahSevakGiftCount: number;
+}
+
 interface PrasadSummaryResponse {
   success: boolean;
   data: PrasadBookRow[];
@@ -81,6 +101,7 @@ interface PrasadSummaryResponse {
     biscuitBox: ItemTotals;
     chocolateBox: ItemTotals;
   };
+  giftSummary?: GiftSummary;
   mandals: string[];
   pagination: {
     totalCount: number;
@@ -679,6 +700,7 @@ export default function PrasadCounter(): ReactElement {
 
   const [rows, setRows] = useState<PrasadBookRow[]>([]);
   const [summary, setSummary] = useState<PrasadSummaryResponse['summary'] | null>(null);
+  const [giftSummary, setGiftSummary] = useState<GiftSummary | null>(null);
   const [mandals, setMandals] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -686,8 +708,17 @@ export default function PrasadCounter(): ReactElement {
   const [error, setError] = useState('');
   const [alert, setAlert] = useState<AlertState | null>(null);
   const [activeRow, setActiveRow] = useState<PrasadBookRow | null>(null);
+  const [quickGiftOpen, setQuickGiftOpen] = useState(false);
   const [selectedBreakdownBook, setSelectedBreakdownBook] =
     useState<PrasadBookRow | null>(null);
+  const [summarySevak, setSummarySevak] = useState<{
+    sevakId: string;
+    sevakCode: string;
+    sevakName: string;
+  } | null>(null);
+  const [inlineSummaryOpen, setInlineSummaryOpen] = useState<
+    Record<string, boolean>
+  >({});
 
   const hasActiveSearch = Boolean(
     searchQuery.trim() || selectedMandal !== 'ALL' || statusFilter !== 'ALL'
@@ -720,6 +751,7 @@ export default function PrasadCounter(): ReactElement {
         );
         setRows(activeSearch ? response.data.data : []);
         setSummary(response.data.summary);
+        setGiftSummary(response.data.giftSummary ?? null);
         setMandals(response.data.mandals);
         setTotal(response.data.pagination.totalCount);
       } catch (err) {
@@ -756,6 +788,7 @@ export default function PrasadCounter(): ReactElement {
       );
       setRows(activeSearch ? response.data.data : []);
       setSummary(response.data.summary);
+      setGiftSummary(response.data.giftSummary ?? null);
       setTotal(response.data.pagination.totalCount);
     } catch (err) {
       setError(
@@ -803,6 +836,25 @@ export default function PrasadCounter(): ReactElement {
     row.remaining.biscuit +
     row.remaining.chocolate;
 
+  const sevakGroups = useMemo(() => {
+    const groups: Array<{ sevakId: string; rows: PrasadBookRow[] }> = [];
+    const indexBySevak = new Map<string, number>();
+    for (const row of rows) {
+      const existing = indexBySevak.get(row.sevakId);
+      if (existing === undefined) {
+        indexBySevak.set(row.sevakId, groups.length);
+        groups.push({ sevakId: row.sevakId, rows: [row] });
+      } else {
+        groups[existing].rows.push(row);
+      }
+    }
+    return groups;
+  }, [rows]);
+
+  const toggleInlineSummary = (sevakId: string): void => {
+    setInlineSummaryOpen((prev) => ({ ...prev, [sevakId]: !prev[sevakId] }));
+  };
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const inputClass =
@@ -826,22 +878,32 @@ export default function PrasadCounter(): ReactElement {
             Live book-level prasad eligibility and distribution desk.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={isExporting}
-          className="flex items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isExporting ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <FileSpreadsheet size={16} />
-          )}
-          Download Excel
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setQuickGiftOpen(true)}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
+          >
+            <Gift size={16} />
+            Quick Gift / સીધી ભેટ વિતરણ
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isExporting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <FileSpreadsheet size={16} />
+            )}
+            Download Excel
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {ITEM_META.map((meta) => {
           const totals = summary?.[meta.summaryKey] ?? { eligible: 0, given: 0, remaining: 0 };
           return (
@@ -873,6 +935,51 @@ export default function PrasadCounter(): ReactElement {
             </div>
           );
         })}
+
+        {/* GIFT CARD */}
+        <div className="flex flex-col justify-between rounded-xl border border-rose-200/80 bg-rose-50/60 p-4 shadow-xs">
+          <div className="flex items-center justify-between gap-1 text-xs font-semibold text-rose-800">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
+              <Gift size={14} />
+              GIFT / ભેટ
+            </span>
+            <span className="whitespace-nowrap rounded bg-rose-200/70 px-1.5 py-0.5 font-mono text-[10px] text-rose-900">
+              1+1 / Volunteer
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-rose-100 pt-2 text-center">
+            <div>
+              <div className="whitespace-nowrap text-[11px] font-medium text-gray-500">
+                Biscuit Box
+              </div>
+              <div className="text-base font-bold text-rose-900">
+                {giftSummary?.eligibleBiscuit ?? 0}
+              </div>
+              <div className="text-[10px] font-medium text-rose-700">
+                Given: {giftSummary?.totalBiscuitGiven ?? 0} · Rem:{' '}
+                {(giftSummary?.eligibleBiscuit ?? 0) -
+                  (giftSummary?.totalBiscuitGiven ?? 0)}
+              </div>
+            </div>
+            <div>
+              <div className="whitespace-nowrap text-[11px] font-medium text-gray-500">
+                Chocolate Box
+              </div>
+              <div className="text-base font-bold text-rose-900">
+                {giftSummary?.eligibleChocolate ?? 0}
+              </div>
+              <div className="text-[10px] font-medium text-rose-700">
+                Given: {giftSummary?.totalChocolateGiven ?? 0} · Rem:{' '}
+                {(giftSummary?.eligibleChocolate ?? 0) -
+                  (giftSummary?.totalChocolateGiven ?? 0)}
+              </div>
+            </div>
+          </div>
+          <div className="mt-1.5 flex justify-center gap-3 text-[10px] font-medium text-rose-700">
+            <span>Sevak: {giftSummary?.sevakCount ?? 0}</span>
+            <span>Sah-Sevak: {giftSummary?.sahSevakCount ?? 0}</span>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center">
@@ -954,8 +1061,75 @@ export default function PrasadCounter(): ReactElement {
             Showing {rows.length} of {total} book{total === 1 ? '' : 's'}
           </div>
 
-          <div className="space-y-3">
-            {rows.map((row) => {
+          <div className="space-y-5">
+            {sevakGroups.map((group) => {
+              const first = group.rows[0];
+              const sahSevakNames = [
+                ...new Set(
+                  group.rows
+                    .map((r) => r.sahSevakName)
+                    .filter((name): name is string => Boolean(name))
+                ),
+              ];
+              const inlineOpen = Boolean(inlineSummaryOpen[group.sevakId]);
+              return (
+                <div key={group.sevakId} className="space-y-3">
+                  <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-md bg-amber-100 px-2 py-1 font-mono text-sm font-bold text-amber-700">
+                            {first.sevakCode}
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {first.sevakName}
+                          </span>
+                          <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+                            {group.rows.length} Book{group.rows.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {first.sevakMobile} · {first.mandal} · {first.kshetra}
+                        </p>
+                        {sahSevakNames.length > 0 && (
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Sah-Sevak{sahSevakNames.length === 1 ? '' : 's'}:{' '}
+                            <span className="font-medium text-slate-700">
+                              {sahSevakNames.join(', ')}
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSummarySevak({
+                              sevakId: group.sevakId,
+                              sevakCode: first.sevakCode,
+                              sevakName: first.sevakName,
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-100 px-3.5 py-1.5 text-xs font-semibold text-amber-800 shadow-sm transition hover:border-amber-400 hover:bg-amber-200"
+                        >
+                          <ClipboardList size={14} />
+                          View Total Sevak Allocation Summary / સેવક કુલ પ્રસાદ ગણતરી જુઓ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleInlineSummary(group.sevakId)}
+                          className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-50"
+                          aria-expanded={inlineOpen}
+                        >
+                          {inlineOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          {inlineOpen ? 'Hide' : 'Show'} Combined Summary
+                        </button>
+                      </div>
+                    </div>
+                    {inlineOpen && <InlineSevakSlabSummary sevakId={group.sevakId} />}
+                  </div>
+
+                  {group.rows.map((row) => {
               const isComplete = row.status === 'COMPLETED';
               return (
                 <div
@@ -1082,6 +1256,9 @@ export default function PrasadCounter(): ReactElement {
                   </div>
                 </div>
               );
+                  })}
+                </div>
+              );
             })}
           </div>
 
@@ -1115,6 +1292,15 @@ export default function PrasadCounter(): ReactElement {
         />
       )}
 
+      {summarySevak && (
+        <SevakPrasadSummaryModal
+          sevakId={summarySevak.sevakId}
+          fallbackCode={summarySevak.sevakCode}
+          fallbackName={summarySevak.sevakName}
+          onClose={() => setSummarySevak(null)}
+        />
+      )}
+
       {activeRow && (
         <DistributeModal
           row={activeRow}
@@ -1122,6 +1308,17 @@ export default function PrasadCounter(): ReactElement {
           onSaved={() => {
             setActiveRow(null);
             setAlert({ type: 'success', message: 'Prasad distributed successfully' });
+            void refreshData();
+          }}
+        />
+      )}
+
+      {quickGiftOpen && (
+        <AllocateGiftModal
+          onClose={() => setQuickGiftOpen(false)}
+          onSaved={() => {
+            setQuickGiftOpen(false);
+            setAlert({ type: 'success', message: 'Gift allocated successfully' });
             void refreshData();
           }}
         />

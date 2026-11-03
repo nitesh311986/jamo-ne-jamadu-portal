@@ -62,6 +62,7 @@ model Sevak {
   assignedBooks     BookAllocation[]
   receipts          SevaReceipt[]
   distributions     PrasadDistribution[]
+  giftAllocations   SevakGiftAllocation[]   // Relation to volunteer gifts
 
   @@index([mobile])
   @@index([whatsapp])
@@ -158,4 +159,24 @@ model PrasadDistribution {
   @@index([bookNumber])
   @@index([collectedByName])
   @@index([collectedByMobile])
+}
+
+model SevakGiftAllocation {
+  id                   String    @id @default(uuid())
+  sevakId              String
+  sevak                Sevak     @relation(fields: [sevakId], references: [id], onDelete: Cascade)
+  
+  recipientType        String    // 'SEVAK' or 'SAH_SEVAK'
+  recipientName        String    // Name of Sevak or Sah-Sevak receiving the gift
+  biscuitBoxesGiven    Int       @default(0)
+  chocolateBoxesGiven  Int       @default(0)
+
+  allocatedAt          DateTime  @default(now())
+  allocatedBy          String?   // Volunteer user operating the desk
+  notes                String?
+
+  @@index([sevakId])
+  @@index([recipientType])
+  @@index([recipientName])
+  @@index([allocatedAt(sort: Desc)])
 }
