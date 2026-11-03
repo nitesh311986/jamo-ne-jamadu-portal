@@ -132,6 +132,135 @@ export function sumPrasadItems(amounts: number[]): PrasadItems {
   return calculatePrasadForReceipts(amounts.map((amount) => ({ amount }))).eligible;
 }
 
+export interface SlabBreakdown {
+  receiptCount: number;
+  bag: number;
+  small: number;
+  big: number;
+  biscuit: number;
+  chocolate: number;
+}
+
+export interface SevakSlabSummary {
+  totalReceipts: number;
+  totalAmount: number;
+  booksCount: number;
+  sahSevakNames: string[];
+  slab1: SlabBreakdown;
+  slab2: SlabBreakdown;
+  slab3: SlabBreakdown;
+  slab4: SlabBreakdown;
+  slab5: SlabBreakdown;
+  totalEligible: PrasadItems;
+}
+
+function emptySlabBreakdown(): SlabBreakdown {
+  return { receiptCount: 0, bag: 0, small: 0, big: 0, biscuit: 0, chocolate: 0 };
+}
+
+export function buildSevakSlabSummary(
+  receipts: Array<{ amount: number | Prisma.Decimal; bookNumber?: string }>,
+  booksCount: number,
+  sahSevakNames: string[]
+): SevakSlabSummary {
+  const breakdowns = SLAB_DEFS.map(() => emptySlabBreakdown());
+  let totalAmount = 0;
+
+  for (const r of receipts) {
+    const amt = toAmountNumber(r.amount);
+    totalAmount += amt;
+    const slabIndex = SLAB_DEFS.findIndex(
+      (slab) => amt >= slab.min && (slab.max === null || amt <= slab.max)
+    );
+    if (slabIndex === -1) continue;
+
+    const items = SLAB_DEFS[slabIndex].items;
+    const breakdown = breakdowns[slabIndex];
+    breakdown.receiptCount += 1;
+    breakdown.bag += items.bag;
+    breakdown.small += items.small;
+    breakdown.big += items.big;
+    breakdown.biscuit += items.biscuit;
+    breakdown.chocolate += items.chocolate;
+  }
+
+  const totalEligible = breakdowns.reduce<PrasadItems>(
+    (acc, b) => ({
+      bag: acc.bag + b.bag,
+      small: acc.small + b.small,
+      big: acc.big + b.big,
+      biscuit: acc.biscuit + b.biscuit,
+      chocolate: acc.chocolate + b.chocolate,
+    }),
+    emptyPrasadItems()
+  );
+
+  return {
+    totalReceipts: receipts.length,
+    totalAmount,
+    booksCount,
+    sahSevakNames,
+    slab1: breakdowns[0],
+    slab2: breakdowns[1],
+    slab3: breakdowns[2],
+    slab4: breakdowns[3],
+    slab5: breakdowns[4],
+    totalEligible,
+  };
+}
+
+export interface SevakSlabSummaryData {
+  sevak: {
+    id: string;
+    sevakCode: string;
+    fullName: string;
+    mobile: string;
+    mandal: string;
+    kshetra: string;
+  };
+  slabSummary: SevakSlabSummary;
+}
+
+export async function getSevakSlabSummaryData(
+  sevakId: string
+): Promise<SevakSlabSummaryData | null> {
+  const sevak = await prisma.sevak.findUnique({
+    where: { id: sevakId },
+    include: {
+      assignedBooks: true,
+      receipts: { select: { amount: true, bookNumber: true } },
+    },
+  });
+  if (!sevak) return null;
+
+  const bookNumbers = new Set(sevak.assignedBooks.map((b) => b.bookNumber));
+  const bookReceipts = sevak.receipts.filter((r) => bookNumbers.has(r.bookNumber));
+
+  const sahSevakNames = [
+    ...new Set(
+      sevak.assignedBooks
+        .map((b) => b.sahSevakName?.trim())
+        .filter((name): name is string => Boolean(name))
+    ),
+  ];
+
+  return {
+    sevak: {
+      id: sevak.id,
+      sevakCode: sevak.sevakCode,
+      fullName: sevak.fullName,
+      mobile: sevak.mobile,
+      mandal: sevak.mandal,
+      kshetra: sevak.kshetra,
+    },
+    slabSummary: buildSevakSlabSummary(
+      bookReceipts,
+      sevak.assignedBooks.length,
+      sahSevakNames
+    ),
+  };
+}
+
 export type PrasadRowStatus = 'PENDING' | 'COMPLETED';
 
 export interface PrasadBookRow {

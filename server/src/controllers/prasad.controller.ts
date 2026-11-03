@@ -6,6 +6,7 @@ import { logAuditEvent } from '../utils/audit';
 import { parsePaginationParams } from '../utils/pagination';
 import {
   getPrasadSummaryData,
+  getSevakSlabSummaryData,
   sumPrasadItems,
   type PrasadBookRow,
   type PrasadItems,
@@ -135,13 +136,80 @@ function applySearchScope(rows: PrasadBookRow[], search: string): PrasadBookRow[
   );
 }
 
+export interface GiftSummaryStats {
+  // Eligible volunteers: each sevak + each sah-sevak gets 1 biscuit + 1 chocolate box
+  sevakCount: number;
+  sahSevakCount: number;
+  totalRecipients: number;
+  eligibleBiscuit: number;
+  eligibleChocolate: number;
+  // Actually distributed
+  totalBiscuitGiven: number;
+  totalChocolateGiven: number;
+  sevakGiftCount: number;
+  sahSevakGiftCount: number;
+}
+
+async function getGiftSummaryStats(): Promise<GiftSummaryStats> {
+  const [totals, byType, sevakCount, sahSevakRows] = await Promise.all([
+    prisma.sevakGiftAllocation.aggregate({
+      _sum: { biscuitBoxesGiven: true, chocolateBoxesGiven: true },
+    }),
+    prisma.sevakGiftAllocation.groupBy({
+      by: ['recipientType'],
+      _count: { _all: true },
+    }),
+    prisma.sevak.count(),
+    prisma.bookAllocation.findMany({
+      where: { sahSevakName: { not: null } },
+      select: { sahSevakName: true, sahSevakMobile: true },
+    }),
+  ]);
+
+  // Distinct sah-sevaks across all books (name + mobile pair identifies a person)
+  const sahSevakKeys = new Set<string>();
+  for (const row of sahSevakRows) {
+    const name = (row.sahSevakName ?? '').trim().toLowerCase();
+    if (!name) continue;
+    const mobile = (row.sahSevakMobile ?? '').trim();
+    sahSevakKeys.add(`${name}|${mobile}`);
+  }
+  const sahSevakCount = sahSevakKeys.size;
+  const totalRecipients = sevakCount + sahSevakCount;
+
+  const stats: GiftSummaryStats = {
+    sevakCount,
+    sahSevakCount,
+    totalRecipients,
+    eligibleBiscuit: totalRecipients,
+    eligibleChocolate: totalRecipients,
+    totalBiscuitGiven: totals._sum.biscuitBoxesGiven ?? 0,
+    totalChocolateGiven: totals._sum.chocolateBoxesGiven ?? 0,
+    sevakGiftCount: 0,
+    sahSevakGiftCount: 0,
+  };
+
+  for (const row of byType) {
+    if (row.recipientType === 'SEVAK') {
+      stats.sevakGiftCount = row._count._all;
+    } else if (row.recipientType === 'SAH_SEVAK') {
+      stats.sahSevakGiftCount = row._count._all;
+    }
+  }
+
+  return stats;
+}
+
 export async function getPrasadSummary(req: Request, res: Response): Promise<void> {
   try {
     const filters = parseFilters(req.query);
     const { page, limit, skip, take } = parsePaginationParams(req.query);
     const trimmedSearch = (req.query.search as string || '').trim();
 
-    const { rows: allRows, mandals } = await getPrasadSummaryData(filters);
+    const [{ rows: allRows, mandals }, giftSummary] = await Promise.all([
+      getPrasadSummaryData(filters),
+      getGiftSummaryStats(),
+    ]);
 
     const scopedRows = trimmedSearch ? applySearchScope(allRows, trimmedSearch) : allRows;
     scopedRows.sort(sortPendingBooksFirst);
@@ -156,6 +224,7 @@ export async function getPrasadSummary(req: Request, res: Response): Promise<voi
       success: true,
       data,
       summary,
+      giftSummary,
       mandals,
       pagination: {
         totalCount,
@@ -168,6 +237,27 @@ export async function getPrasadSummary(req: Request, res: Response): Promise<voi
     });
   } catch (err) {
     logger.error('Get prasad summary error', { error: (err as Error).message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function getSevakSlabSummary(req: Request, res: Response): Promise<void> {
+  try {
+    const sevakId = asTrimmedString(req.params.sevakId);
+    if (!sevakId) {
+      res.status(400).json({ success: false, error: 'sevakId is required' });
+      return;
+    }
+
+    const data = await getSevakSlabSummaryData(sevakId);
+    if (!data) {
+      res.status(404).json({ success: false, error: 'Sevak not found' });
+      return;
+    }
+
+    res.status(200).json({ success: true, ...data });
+  } catch (err) {
+    logger.error('Get sevak slab summary error', { error: (err as Error).message });
     res.status(500).json({ error: 'Internal server error' });
   }
 }
@@ -398,6 +488,162 @@ export async function distributePrasad(req: Request, res: Response): Promise<voi
       error: (err as Error).message,
       stack: (err as Error).stack,
     });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+const GIFT_RECIPIENT_TYPES = ['SEVAK', 'SAH_SEVAK'] as const;
+
+interface AllocateGiftBody {
+  sevakId?: string;
+  sevakCode?: string;
+  recipientType?: string;
+  recipientName?: string;
+  biscuitBoxesGiven?: number;
+  chocolateBoxesGiven?: number;
+  notes?: string;
+}
+
+export async function allocateGift(req: Request, res: Response): Promise<void> {
+  try {
+    const body = req.body as AllocateGiftBody;
+
+    const sevakId = asTrimmedString(body?.sevakId);
+    const sevakCode = asTrimmedString(body?.sevakCode);
+    if (!sevakId && !sevakCode) {
+      res.status(400).json({ success: false, error: 'sevakId or sevakCode is required' });
+      return;
+    }
+
+    const recipientType = asTrimmedString(body?.recipientType)?.toUpperCase();
+    if (
+      !recipientType ||
+      !(GIFT_RECIPIENT_TYPES as readonly string[]).includes(recipientType)
+    ) {
+      res
+        .status(400)
+        .json({ success: false, error: "recipientType must be 'SEVAK' or 'SAH_SEVAK'" });
+      return;
+    }
+
+    const recipientName = asTrimmedString(body?.recipientName);
+    if (!recipientName) {
+      res.status(400).json({ success: false, error: 'recipientName is required' });
+      return;
+    }
+
+    const biscuitBoxesGiven = Math.floor(Math.max(0, Number(body?.biscuitBoxesGiven) || 0));
+    const chocolateBoxesGiven = Math.floor(
+      Math.max(0, Number(body?.chocolateBoxesGiven) || 0)
+    );
+    if (biscuitBoxesGiven + chocolateBoxesGiven === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'At least one biscuit or chocolate box must be greater than zero',
+      });
+      return;
+    }
+
+    const sevak = sevakId
+      ? await prisma.sevak.findUnique({ where: { id: sevakId } })
+      : await prisma.sevak.findUnique({ where: { sevakCode } });
+    if (!sevak) {
+      res.status(404).json({ success: false, error: 'Sevak not found' });
+      return;
+    }
+
+    const allocatedBy = req.user?.fullName ?? req.user?.email ?? 'Counter Volunteer';
+    const notes = asTrimmedString(body?.notes) ?? null;
+
+    const record = await prisma.sevakGiftAllocation.create({
+      data: {
+        sevakId: sevak.id,
+        recipientType,
+        recipientName,
+        biscuitBoxesGiven,
+        chocolateBoxesGiven,
+        allocatedBy,
+        notes,
+      },
+    });
+
+    const giftSummary = await getGiftSummaryStats();
+
+    const actorId = req.user?.userId ?? 'unknown';
+    await logAuditEvent(actorId, 'GIFT_ALLOCATE', {
+      giftId: record.id,
+      sevakId: sevak.id,
+      sevakCode: sevak.sevakCode,
+      recipientType,
+      recipientName,
+      biscuitBoxesGiven,
+      chocolateBoxesGiven,
+      notes,
+    });
+
+    logger.info('Volunteer gift allocated', {
+      userId: actorId,
+      sevakId: sevak.id,
+      recipientType,
+      recipientName,
+      biscuitBoxesGiven,
+      chocolateBoxesGiven,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Gift allocated successfully',
+      data: record,
+      giftSummary,
+    });
+  } catch (err) {
+    if (err instanceof HttpError) {
+      res.status(err.status).json({ success: false, error: err.message });
+      return;
+    }
+    logger.error('Allocate gift error', {
+      error: (err as Error).message,
+      stack: (err as Error).stack,
+    });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function getGiftSummary(_req: Request, res: Response): Promise<void> {
+  try {
+    const giftSummary = await getGiftSummaryStats();
+    res.status(200).json({ success: true, data: giftSummary });
+  } catch (err) {
+    logger.error('Get gift summary error', { error: (err as Error).message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function getSevakGifts(req: Request, res: Response): Promise<void> {
+  try {
+    const sevakId = asTrimmedString(req.params.sevakId);
+    if (!sevakId) {
+      res.status(400).json({ success: false, error: 'sevakId is required' });
+      return;
+    }
+
+    const sevak = await prisma.sevak.findUnique({
+      where: { id: sevakId },
+      select: { id: true, sevakCode: true, fullName: true },
+    });
+    if (!sevak) {
+      res.status(404).json({ success: false, error: 'Sevak not found' });
+      return;
+    }
+
+    const gifts = await prisma.sevakGiftAllocation.findMany({
+      where: { sevakId },
+      orderBy: { allocatedAt: 'desc' },
+    });
+
+    res.status(200).json({ success: true, data: gifts, sevak });
+  } catch (err) {
+    logger.error('Get sevak gifts error', { error: (err as Error).message });
     res.status(500).json({ error: 'Internal server error' });
   }
 }
